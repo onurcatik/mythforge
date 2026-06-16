@@ -482,32 +482,6 @@ pnpm build         # Production bundle — must compile clean
 
 ---
 
-## 🗺️ Roadmap
-
-```mermaid
-gantt
-    title MythForge — Product Roadmap
-    dateFormat YYYY-MM
-    section Foundation
-        Design system & FSD architecture     :done,    f1, 2025-01, 2025-02
-        App shell, navigation, routing        :done,    f2, 2025-02, 2025-03
-    section Core Product
-        Dashboard & onboarding                :done,    c1, 2025-03, 2025-04
-        Projects, tasks & documents           :done,    c2, 2025-04, 2025-06
-        AI Command Center (RAG + Agent)       :done,    c3, 2025-06, 2025-08
-        Work Graph, assignments & blockers    :done,    c4, 2025-08, 2025-10
-        AI Runtime Settings (Ollama)          :done,    c5, 2025-10, 2025-11
-        Responsive, accessibility & QA        :done,    c6, 2025-11, 2025-12
-    section Growth
-        Multi-language i18n (i18next)         :active,  g1, 2026-01, 2026-03
-        Public API + webhook subscriptions    :         g2, 2026-03, 2026-05
-        Plugin / extension marketplace        :         g3, 2026-05, 2026-09
-    section Scale
-        Self-hosted enterprise packaging      :         s1, 2026-09, 2026-12
-        Advanced analytics & reporting        :         s2, 2026-10, 2027-02
-```
-
----
 
 ## 🤝 Contributing
 
