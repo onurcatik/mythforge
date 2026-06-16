@@ -43,7 +43,7 @@ TTRPG groups — from hobbyist duos to professional design studios — manage ca
 | Lore searches done by scrolling through PDFs | RAG AI that answers from your own documents |
 | No audit trail on AI suggestions | Approval-first: every AI write action requires explicit sign-off |
 | Spreadsheets for XP, gold, and counters | Dynamic custom properties on any task, document, or event |
-| iOS and Android left behind | One codebase → native Android + iOS via Capacitor |
+
 
 MythForge is production-ready software engineered to enterprise standards: PostgreSQL Row Level Security for per-guild data isolation, Yjs CRDT for conflict-free collaborative editing, and a fully typed API contract shared between backend and frontend.
 
@@ -521,9 +521,3 @@ We welcome pull requests that improve quality, fix bugs, or add well-scoped feat
 6. Open a pull request with a concise description, the problem being solved, and any linked issues.
 
 ---
-
-## 📜 License
-
-Copyright © 2025 MythForge. All rights reserved.
-
-This software is proprietary. Redistribution, modification, or commercial use without explicit written permission from the copyright holder is prohibited.
