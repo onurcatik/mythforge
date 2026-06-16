@@ -5,7 +5,7 @@
 
   <p>
     <strong>The professional campaign command platform for Tabletop RPG teams.</strong><br/>
-    Real-time collaboration · AI-assisted lore search · Visual work graphs · Native mobile · Enterprise security.
+    Real-time collaboration · AI-assisted lore search · Visual work graphs Enterprise security.
   </p>
 
   <p>
@@ -81,17 +81,13 @@ Schedule sessions, encounters, and deadlines on an integrated campaign calendar.
 - HaveIBeenPwned breach check on registration (k-anonymity, no full hash sent).
 - CAPTCHA support (hCaptcha, Cloudflare Turnstile, reCAPTCHA v2).
 
-### 📱 Native Mobile (iOS & Android)
-The web SPA is compiled into fully native Android and iOS applications via Capacitor 8 with:
-- Firebase Cloud Messaging push notifications.
-- Haptic feedback, safe area insets, and splash screen branding.
-- Over-the-air JS bundle updates via Capgo.
+
 
 ---
 
 ## 🏗️ System Architecture
 
-MythForge is a three-layer system: a Python async API backend, a React SPA frontend, and a native mobile shell. All layers communicate over a versioned, typed OpenAPI contract.
+MythForge is a three-layer system: a Python async API backend, a React SPA frontend. All layers communicate over a versioned, typed OpenAPI contract.
 
 ```mermaid
 graph TB
@@ -181,7 +177,6 @@ graph TB
 | `ai-operations/` | AI operation rail, RAG answer experience, agent plan experience, command result renderer |
 | `ai-runtime/` | Runtime control tower, capability card, readiness launch card, status badge |
 | `command-entry/` | Command launcher overlay |
-| `navigation/` | Context top bar, workspace switcher, mobile navigation drawer |
 | `quality/` | Frontend quality gate panel |
 
 ---
@@ -247,17 +242,7 @@ sequenceDiagram
 | Linting | Biome | 2.4 |
 | Testing | Vitest + Testing Library | 4.1 |
 
-### Mobile (Capacitor 8)
 
-| Plugin | Capability |
-|---|---|
-| `@capacitor/push-notifications` | Firebase Cloud Messaging push alerts |
-| `@capacitor/haptics` | Haptic feedback on touch events |
-| `@capacitor-community/safe-area` | Notch / island safe area insets |
-| `@capacitor/splash-screen` | Branded launch screen |
-| `@capgo/capacitor-updater` | Over-the-air JS bundle updates |
-| `@capacitor/network` | Offline detection and reconnect |
-| `@capacitor/preferences` | Native persistent key-value store |
 
 ---
 
@@ -472,21 +457,6 @@ pnpm build         # Production bundle — must compile clean
 
 ---
 
-## 📱 Mobile (Capacitor)
-
-```bash
-cd frontend
-
-# Android — build, sync assets, launch emulator or device
-pnpm cap:android
-
-# iOS — build, sync assets, launch Simulator (requires macOS + Xcode)
-pnpm cap:ios
-```
-
-**Firebase Push Notifications:** Set `FCM_ENABLED=true` in `backend/.env` and supply `FCM_PROJECT_ID`, `FCM_API_KEY`, and `FCM_SERVICE_ACCOUNT_JSON`. The Android project also requires `google-services.json` at `frontend/android/app/`.
-
----
 
 ## ⚙️ Environment Reference
 
