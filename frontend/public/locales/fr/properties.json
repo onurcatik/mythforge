@@ -1,0 +1,89 @@
+{
+  "title": "Propriétés",
+  "addProperty": "Ajouter une propriété",
+  "noProperties": "Aucune propriété",
+  "saving": "Enregistrement\u2026",
+  "saved": "Enregistré",
+  "remove": "Supprimer la propriété",
+  "types": {
+    "text": "Texte",
+    "number": "Nombre",
+    "checkbox": "Case à cocher",
+    "date": "Date",
+    "datetime": "Date et heure",
+    "url": "URL",
+    "select": "Sélection",
+    "multi_select": "Sélection multiple",
+    "user_reference": "Personne"
+  },
+  "picker": {
+    "placeholder": "Rechercher des propriétés\u2026",
+    "empty": "Aucune propriété ne correspond",
+    "createHeading": "Créer une nouvelle propriété",
+    "namePlaceholder": "Nom de la propriété",
+    "typeLabel": "Type",
+    "createButton": "Créer",
+    "optionValuePlaceholder": "Valeur",
+    "optionLabelPlaceholder": "Libellé",
+    "addOption": "Ajouter une option",
+    "removeOption": "Supprimer l'option",
+    "optionsRequired": "Ajoutez au moins une option"
+  },
+  "input": {
+    "textPlaceholder": "Vide",
+    "numberPlaceholder": "0",
+    "urlPlaceholder": "https://\u2026",
+    "selectPlaceholder": "Sélectionner\u2026",
+    "multiSelectPlaceholder": "Sélectionner des options",
+    "userPlaceholder": "Assigner une personne\u2026",
+    "unknownOption": "Option inconnue : {{value}}",
+    "clear": "Effacer",
+    "searchOptions": "Rechercher ou créer une option\u2026",
+    "createOption": "Créer « {{label}} »",
+    "optionAdded": "Option ajoutée",
+    "optionAddFailed": "Impossible d'ajouter l'option"
+  },
+  "cell": {
+    "emptyValue": "—",
+    "none": "Aucun"
+  },
+  "manager": {
+    "title": "Propriétés personnalisées",
+    "description": "Définissez des métadonnées réutilisables pour les documents, les tâches et les événements de cette Mythforge.",
+    "newDefinition": "Nouvelle propriété",
+    "editDefinition": "Modifier la propriété",
+    "nameLabel": "Nom",
+    "typeLabel": "Type",
+    "optionsLabel": "Options",
+    "addOption": "Ajouter une option",
+    "removeOption": "Supprimer l'option",
+    "optionValuePlaceholder": "Valeur",
+    "optionLabelPlaceholder": "Libellé",
+    "colorLabel": "Couleur",
+    "delete": "Supprimer la propriété",
+    "deleteConfirmTitle": "Supprimer cette propriété ?",
+    "deleteConfirmBody": "Cela supprimera la propriété et toutes les valeurs associées aux documents, tâches et événements.",
+    "orphanedWarning": "{{count}} valeurs existantes font référence à des options supprimées. Elles s'afficheront comme « Option inconnue » jusqu'à leur mise à jour.",
+    "createError": "Échec de la création de la propriété",
+    "updateError": "Échec de la mise à jour de la propriété",
+    "deleteError": "Échec de la suppression de la propriété",
+    "setValuesError": "Échec de l'enregistrement de la valeur de la propriété"
+  },
+  "filter": {
+    "addFilter": "Ajouter un filtre de propriété",
+    "property": "Propriété",
+    "operator": "Op",
+    "value": "Valeur",
+    "remove": "Supprimer le filtre de propriété",
+    "ops": {
+      "eq": "est",
+      "lt": "<",
+      "lte": "≤",
+      "gt": ">",
+      "gte": "≥",
+      "in_": "dans",
+      "ilike": "contient",
+      "is_null": "est vide"
+    }
+  }
+}

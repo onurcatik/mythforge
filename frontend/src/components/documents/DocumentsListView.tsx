@@ -1,0 +1,405 @@
+import { Link } from "@tanstack/react-router";
+import type {
+  ColumnDef,
+  PaginationState,
+  SortingState,
+} from "@tanstack/react-table";
+import { formatDistanceToNow } from "date-fns";
+import {
+  Copy,
+  FileSpreadsheet,
+  FileText,
+  Loader2,
+  Presentation,
+  Shield,
+  Tags,
+  Trash2,
+} from "lucide-react";
+import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
+
+import type {
+  DocumentSummary,
+  TagSummary,
+} from "@/api/generated/initiativeAPI.schemas";
+import {
+  buildPropertyColumns,
+  propertyColumnIds,
+} from "@/components/properties/propertyColumns";
+import { SortIcon } from "@/components/SortIcon";
+import { TagBadge } from "@/components/tags/TagBadge";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { DataTable } from "@/components/ui/data-table";
+import { useDateLocale } from "@/hooks/useDateLocale";
+import { usePersistedColumnVisibility } from "@/hooks/usePersistedColumnVisibility";
+import { useProperties } from "@/hooks/useProperties";
+import { getFileTypeLabel } from "@/lib/fileUtils";
+import { useGuildPath } from "@/lib/guildUrl";
+import { dateSortingFn } from "@/lib/sorting";
+
+// Cell component that uses guild-scoped URLs
+const DocumentTitleCell = ({ document }: { document: DocumentSummary }) => {
+  const gp = useGuildPath();
+  return (
+    <div className="min-w-[220px] sm:min-w-0">
+      <Link
+        to={gp(`/documents/${document.id}`)}
+        className="font-medium text-primary hover:underline"
+      >
+        {document.title}
+      </Link>
+    </div>
+  );
+};
+
+const DocumentTagsCell = ({ tags }: { tags: TagSummary[] }) => {
+  const gp = useGuildPath();
+  if (tags.length === 0) {
+    return <span className="text-muted-foreground text-sm">—</span>;
+  }
+  return (
+    <div className="flex flex-wrap gap-1">
+      {tags.slice(0, 3).map((tag) => (
+        <TagBadge key={tag.id} tag={tag} size="sm" to={gp(`/tags/${tag.id}`)} />
+      ))}
+      {tags.length > 3 && (
+        <span className="text-muted-foreground text-xs">
+          +{tags.length - 3}
+        </span>
+      )}
+    </div>
+  );
+};
+
+export interface DocumentsListViewProps {
+  documents: DocumentSummary[];
+  selectedDocuments: DocumentSummary[];
+  onSelectedDocumentsChange: (docs: DocumentSummary[]) => void;
+  canEditSelectedDocuments: boolean;
+  canDuplicateSelectedDocuments: boolean;
+  canDeleteSelectedDocuments: boolean;
+  onBulkEditTags: () => void;
+  onBulkEditAccess: () => void;
+  onBulkDuplicate: () => void;
+  isBulkDuplicating: boolean;
+  onBulkDelete: () => void;
+  isBulkDeleting: boolean;
+  totalPages: number;
+  totalCount: number;
+  pageSize: number;
+  page: number;
+  onPageSizeChange: (size: number) => void;
+  onPageChange: (updater: number | ((prev: number) => number)) => void;
+  onPrefetchPage: (page: number) => void;
+  onSortingChange: (sorting: SortingState) => void;
+}
+
+export const DocumentsListView = ({
+  documents,
+  selectedDocuments,
+  onSelectedDocumentsChange,
+  canEditSelectedDocuments,
+  canDuplicateSelectedDocuments,
+  canDeleteSelectedDocuments,
+  onBulkEditTags,
+  onBulkEditAccess,
+  onBulkDuplicate,
+  isBulkDuplicating,
+  onBulkDelete,
+  isBulkDeleting,
+  totalPages,
+  totalCount,
+  pageSize,
+  page,
+  onPageSizeChange,
+  onPageChange,
+  onPrefetchPage,
+  onSortingChange,
+}: DocumentsListViewProps) => {
+  const { t } = useTranslation(["documents", "common"]);
+  const dateLocale = useDateLocale();
+
+  const { data: allPropertyDefinitions = [] } = useProperties();
+  const propertyColumns = useMemo(
+    () =>
+      buildPropertyColumns<DocumentSummary>(
+        allPropertyDefinitions,
+        (row) => row.properties,
+      ),
+    [allPropertyDefinitions],
+  );
+  const propertyHiddenIds = useMemo(
+    () => propertyColumnIds(allPropertyDefinitions),
+    [allPropertyDefinitions],
+  );
+  const [columnVisibility, setColumnVisibility] = usePersistedColumnVisibility(
+    "Initiative-documents-columns",
+    propertyHiddenIds,
+  );
+
+  // Column definitions with translations (must be inside component for hook access)
+  const documentColumns: ColumnDef<DocumentSummary>[] = useMemo(
+    () => [
+      {
+        accessorKey: "title",
+        header: ({ column }) => {
+          const isSorted = column.getIsSorted();
+          return (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                onClick={() => column.toggleSorting(isSorted === "asc")}
+              >
+                {t("documents:columns.title")}
+                <SortIcon isSorted={isSorted} />
+              </Button>
+            </div>
+          );
+        },
+        cell: ({ row }) => <DocumentTitleCell document={row.original} />,
+        enableSorting: true,
+        sortingFn: "alphanumeric",
+        enableHiding: false,
+      },
+      {
+        id: "last updated",
+        accessorKey: "updated_at",
+        header: ({ column }) => {
+          const isSorted = column.getIsSorted();
+          return (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                onClick={() => column.toggleSorting(isSorted === "asc")}
+              >
+                {t("documents:columns.lastUpdated")}
+                <SortIcon isSorted={isSorted} />
+              </Button>
+            </div>
+          );
+        },
+        cell: ({ row }) => {
+          const updatedAt = new Date(row.original.updated_at);
+          return (
+            <div className="min-w-[100px] sm:min-w-0">
+              <span className="text-muted-foreground">
+                {formatDistanceToNow(updatedAt, {
+                  addSuffix: true,
+                  locale: dateLocale,
+                })}
+              </span>
+            </div>
+          );
+        },
+        sortingFn: dateSortingFn,
+      },
+      {
+        accessorKey: "projects",
+        header: t("documents:columns.projects"),
+        cell: ({ row }) => {
+          const count = row.original.projects.length;
+          return <span>{count}</span>;
+        },
+      },
+      {
+        id: "tags",
+        header: t("documents:columns.tags"),
+        cell: ({ row }) => <DocumentTagsCell tags={row.original.tags ?? []} />,
+        size: 150,
+      },
+      {
+        id: "owner",
+        header: t("documents:columns.owner"),
+        cell: ({ row }) => {
+          const ownerPermission = (row.original.permissions ?? []).find(
+            (p) => p.level === "owner",
+          );
+          if (!ownerPermission) {
+            return <span className="text-muted-foreground">—</span>;
+          }
+          const ownerMember = row.original.initiative?.members?.find(
+            (m) => m.user.id === ownerPermission.user_id,
+          );
+          const ownerName =
+            ownerMember?.user?.full_name || ownerMember?.user?.email;
+          return (
+            <span>
+              {ownerName ||
+                t("documents:bulk.userFallback", {
+                  id: ownerPermission.user_id,
+                })}
+            </span>
+          );
+        },
+      },
+      {
+        id: "type",
+        accessorKey: "is_template",
+        header: t("documents:columns.type"),
+        cell: ({ row }) => {
+          const doc = row.original;
+          const isFile = doc.document_type === "file";
+          const fileTypeLabel = isFile
+            ? getFileTypeLabel(doc.file_content_type, doc.original_filename)
+            : null;
+
+          return (
+            <div className="flex items-center gap-2">
+              {isFile ? (
+                <Badge variant="secondary" className="flex items-center gap-1">
+                  {fileTypeLabel === "Excel" ? (
+                    <FileSpreadsheet className="h-3 w-3" />
+                  ) : fileTypeLabel === "PowerPoint" ? (
+                    <Presentation className="h-3 w-3" />
+                  ) : (
+                    <FileText className="h-3 w-3" />
+                  )}
+                  {fileTypeLabel}
+                </Badge>
+              ) : doc.is_template ? (
+                <Badge variant="outline">{t("documents:type.template")}</Badge>
+              ) : (
+                <span className="text-muted-foreground">
+                  {t("documents:type.document")}
+                </span>
+              )}
+            </div>
+          );
+        },
+      },
+    ],
+    [t, dateLocale],
+  );
+
+  const columnsWithProperties = useMemo<ColumnDef<DocumentSummary>[]>(() => {
+    if (propertyColumns.length === 0) return documentColumns;
+    const tagsIdx = documentColumns.findIndex(
+      (c) => (c as { id?: string }).id === "tags",
+    );
+    if (tagsIdx === -1) return [...documentColumns, ...propertyColumns];
+    return [
+      ...documentColumns.slice(0, tagsIdx + 1),
+      ...propertyColumns,
+      ...documentColumns.slice(tagsIdx + 1),
+    ];
+  }, [documentColumns, propertyColumns]);
+
+  return (
+    <>
+      {selectedDocuments.length > 0 && (
+        <div className="flex items-center justify-between rounded-md border border-primary bg-primary/5 p-4">
+          <div className="font-medium text-sm">
+            {t("documents:bulk.selected", { count: selectedDocuments.length })}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onBulkEditTags}
+              disabled={!canEditSelectedDocuments}
+              title={
+                canEditSelectedDocuments
+                  ? undefined
+                  : t("documents:bulk.needEditAccessTags")
+              }
+            >
+              <Tags className="h-4 w-4" />
+              {t("documents:bulk.editTags")}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onBulkEditAccess}
+              disabled={!canEditSelectedDocuments}
+              title={
+                canEditSelectedDocuments
+                  ? undefined
+                  : t("documents:bulk.needEditAccessPermissions")
+              }
+            >
+              <Shield className="h-4 w-4" />
+              {t("documents:bulk.editAccess")}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onBulkDuplicate}
+              disabled={isBulkDuplicating || !canDuplicateSelectedDocuments}
+              title={
+                canDuplicateSelectedDocuments
+                  ? undefined
+                  : t("documents:bulk.needEditAccessDuplicate")
+              }
+            >
+              {isBulkDuplicating ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {t("documents:bulk.duplicating")}
+                </>
+              ) : (
+                <>
+                  <Copy className="h-4 w-4" />
+                  {t("documents:bulk.duplicate")}
+                </>
+              )}
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={onBulkDelete}
+              disabled={isBulkDeleting || !canDeleteSelectedDocuments}
+              title={
+                canDeleteSelectedDocuments
+                  ? undefined
+                  : t("documents:bulk.needOwnerAccess")
+              }
+            >
+              {isBulkDeleting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {t("documents:bulk.deleting")}
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4" />
+                  {t("common:delete")}
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
+      <DataTable
+        columns={columnsWithProperties}
+        data={documents}
+        columnVisibility={columnVisibility}
+        onColumnVisibilityChange={setColumnVisibility}
+        enableFilterInput
+        filterInputColumnKey="title"
+        filterInputPlaceholder={t("documents:page.filterPlaceholder")}
+        enableColumnVisibilityDropdown
+        enablePagination
+        manualPagination
+        pageCount={totalPages}
+        rowCount={totalCount}
+        pageIndex={page - 1}
+        onPaginationChange={(pag: PaginationState) => {
+          if (pag.pageSize !== pageSize) {
+            onPageSizeChange(pag.pageSize);
+          } else {
+            onPageChange(pag.pageIndex + 1);
+          }
+        }}
+        onPrefetchPage={(pageIndex: number) => onPrefetchPage(pageIndex + 1)}
+        manualSorting
+        onSortingChange={onSortingChange}
+        enableResetSorting
+        enableRowSelection
+        onRowSelectionChange={onSelectedDocumentsChange}
+        getRowId={(row: DocumentSummary) => String(row.id)}
+        onExitSelection={() => onSelectedDocumentsChange([])}
+      />
+    </>
+  );
+};

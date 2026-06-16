@@ -1,0 +1,906 @@
+@import "tailwindcss";
+
+@plugin "tailwindcss-animate";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root {
+  --accent-light-color: 0.208 0.042 265.755;
+  --accent-light-surface: 0.968 0.007 247.896;
+  --accent-light-foreground: 0.984 0.003 247.858;
+  --accent-dark-color: 0.929 0.013 255.508;
+  --accent-dark-surface: 0.279 0.041 260.031;
+  --accent-dark-foreground: 0.208 0.042 265.755;
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.129 0.042 264.695);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.129 0.042 264.695);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.129 0.042 264.695);
+  --primary: oklch(var(--accent-light-color, 0.208 0.042 265.755));
+  --primary-foreground: oklch(var(--accent-light-foreground, 0.984 0.003 247.858));
+  --secondary: oklch(0.968 0.007 247.896);
+  --secondary-foreground: oklch(0.208 0.042 265.755);
+  --muted: oklch(0.968 0.007 247.896);
+  --muted-foreground: oklch(0.554 0.046 257.417);
+  --accent: oklch(0.968 0.007 247.896);
+  --accent-foreground: oklch(0.208 0.042 265.755);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.929 0.013 255.508);
+  --input: oklch(0.929 0.013 255.508);
+  --ring: var(--accent-light-color, 0.208 0.042 265.755);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.984 0.003 247.858);
+  --sidebar-foreground: oklch(0.129 0.042 264.695);
+  --sidebar-primary: oklch(0.208 0.042 265.755);
+  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
+  --sidebar-accent: oklch(0.968 0.007 247.896);
+  --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
+  --sidebar-border: oklch(0.929 0.013 255.508);
+  --sidebar-ring: oklch(0.704 0.04 256.788);
+}
+
+.dark {
+  --background: oklch(0.129 0.042 264.695);
+  --foreground: oklch(0.984 0.003 247.858);
+  --card: oklch(0.208 0.042 265.755);
+  --card-foreground: oklch(0.984 0.003 247.858);
+  --popover: oklch(0.208 0.042 265.755);
+  --popover-foreground: oklch(0.984 0.003 247.858);
+  --primary: oklch(var(--accent-dark-color, 0.929 0.013 255.508));
+  --primary-foreground: oklch(var(--accent-dark-foreground, 0.208 0.042 265.755));
+  --secondary: oklch(0.279 0.041 260.031);
+  --secondary-foreground: oklch(0.984 0.003 247.858);
+  --muted: oklch(0.279 0.041 260.031);
+  --muted-foreground: oklch(0.704 0.04 256.788);
+  --accent: oklch(0.279 0.041 260.031);
+  --accent-foreground: oklch(0.984 0.003 247.858);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(var(--accent-dark-color, 0.929 0.013 255.508));
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.208 0.042 265.755);
+  --sidebar-foreground: oklch(0.984 0.003 247.858);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
+  --sidebar-accent: oklch(0.279 0.041 260.031);
+  --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.551 0.027 264.364);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  :root {
+    /* Safe area insets - set by @capacitor-community/safe-area plugin on native */
+    /* Falls back to env() for iOS Safari or 0px on unsupported platforms */
+    --safe-area-inset-top: env(safe-area-inset-top, 0px);
+    --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-area-inset-left: env(safe-area-inset-left, 0px);
+    --safe-area-inset-right: env(safe-area-inset-right, 0px);
+  }
+  html {
+    height: 100vh;
+    /* biome-ignore lint: not all browsers support dvh */
+    height: 100dvh;
+    @apply bg-background;
+  }
+  body {
+    font-family: "Outfit", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    min-height: 100%;
+    @apply bg-background text-foreground;
+  }
+  /* Non-native platforms (web): apply safe area insets via CSS */
+  html:not(.native-platform) body {
+    padding-top: var(--safe-area-inset-top);
+    padding-bottom: var(--safe-area-inset-bottom);
+    padding-left: var(--safe-area-inset-left);
+    padding-right: var(--safe-area-inset-right);
+  }
+  /* Native iOS: only apply bottom safe area (top is handled by the header component) */
+  html.native-ios body {
+    padding-bottom: var(--safe-area-inset-bottom);
+  }
+}
+
+@keyframes aurora {
+  0%,
+  100% {
+    background-position:
+      50% 50%,
+      50% 50%;
+  }
+  25% {
+    background-position:
+      0% 50%,
+      100% 50%;
+  }
+  50% {
+    background-position:
+      50% 100%,
+      50% 0%;
+  }
+  75% {
+    background-position:
+      100% 50%,
+      0% 50%;
+  }
+}
+
+.aurora-bg {
+  background-image:
+    radial-gradient(ellipse 100% 60% at 50% -10%, oklch(0.7 0.18 280 / 0.25), transparent),
+    radial-gradient(ellipse 80% 50% at 80% 110%, oklch(0.65 0.15 220 / 0.2), transparent),
+    radial-gradient(ellipse 60% 40% at 10% 60%, oklch(0.6 0.12 300 / 0.15), transparent);
+  animation: aurora 15s ease-in-out infinite;
+}
+
+.dark .aurora-bg {
+  background-image:
+    radial-gradient(ellipse 100% 60% at 50% -10%, oklch(0.5 0.25 280 / 0.35), transparent),
+    radial-gradient(ellipse 80% 50% at 80% 110%, oklch(0.45 0.2 220 / 0.3), transparent),
+    radial-gradient(ellipse 60% 40% at 10% 60%, oklch(0.4 0.18 300 / 0.25), transparent);
+}
+
+/* Pride mode — animated rainbow logo, wordmark, and primary-button accents
+   (gated on the `pride` root class set by usePride.tsx). */
+html.pride {
+  --pride-rainbow: linear-gradient(
+    90deg,
+    #e40303,
+    #ff8c00,
+    #ffed00,
+    #008026,
+    #004dff,
+    #750787,
+    #e40303
+  );
+}
+
+@keyframes pride-hue {
+  from {
+    filter: hue-rotate(0deg) drop-shadow(0 0 5px oklch(0.7 0.2 30 / 0.45));
+  }
+  to {
+    filter: hue-rotate(360deg) drop-shadow(0 0 5px oklch(0.7 0.2 30 / 0.45));
+  }
+}
+
+/* Flows a 200%-wide rainbow across the element for a single-layer background. */
+@keyframes pride-flow {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Two-layer variant: the solid inner fill stays put, the border rainbow flows. */
+@keyframes pride-flow-border {
+  to {
+    background-position:
+      0 0,
+      -200% 0;
+  }
+}
+
+/* The mark is painted with a static rainbow gradient; cycling the hue makes it
+   shimmer, and the synced drop-shadow gives it a soft multicolour glow. */
+.pride-logo {
+  animation: pride-hue 8s linear infinite;
+}
+
+/* Brand wordmark rendered as flowing rainbow text. The class is harmless when
+   Pride is off — only the `html.pride` rule activates it. */
+html.pride .pride-wordmark {
+  background-image: var(--pride-rainbow);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: pride-flow 8s linear infinite;
+}
+
+/* Primary (default-variant) buttons keep their solid, legible fill but gain an
+   animated rainbow border: a solid padding-box layer over a rainbow border-box
+   layer, so the gradient shows only in the 2px transparent border. */
+html.pride [data-slot="button"].bg-primary {
+  border: 2px solid transparent;
+  background:
+    linear-gradient(var(--primary), var(--primary)) padding-box,
+    var(--pride-rainbow) border-box;
+  background-size:
+    auto,
+    200% auto;
+  animation: pride-flow-border 8s linear infinite;
+}
+
+/* Preserve a hover affordance (the gradient fill hides the usual bg darken). */
+html.pride [data-slot="button"].bg-primary:hover {
+  filter: brightness(1.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pride-logo {
+    animation: none;
+    filter: drop-shadow(0 0 4px oklch(0.7 0.18 320 / 0.3));
+  }
+
+  html.pride .pride-wordmark,
+  html.pride [data-slot="button"].bg-primary {
+    animation: none;
+  }
+}
+
+[data-document-editor] .document-editor__content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.25rem 0;
+}
+
+[data-document-editor] .document-editor__content th,
+[data-document-editor] .document-editor__content td {
+  border: 1px solid var(--border);
+  padding: 0.75rem;
+  text-align: left;
+  vertical-align: top;
+  background-color: transparent;
+}
+
+[data-document-editor] .document-editor__content th {
+  font-weight: 400;
+}
+
+[data-document-editor] .document-editor__content img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background-color: var(--card);
+}
+
+[data-document-editor] .document-editor__content .document-editor__checklist,
+[data-document-editor] .document-editor__content .document-editor__checklist ul {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+}
+
+[data-document-editor] .document-editor__content .document-editor__checklist ul {
+  margin-left: 1.5rem;
+}
+
+[data-document-editor] .document-editor__content .document-editor__checklist li {
+  position: relative;
+  padding-left: 2rem;
+  margin-left: 0;
+  min-height: 1.75rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+[data-document-editor] .document-editor__content .document-editor__checklist li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.35rem;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 0.35rem;
+  border: 1.5px solid var(--border);
+  background-color: var(--card);
+  box-shadow: inset 0 1px 1px rgb(15 15 15 / 0.12);
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+[data-document-editor]
+  .document-editor__content
+  .document-editor__checklist
+  li[aria-checked="true"]::before {
+  background-color: var(--primary);
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 2px var(--primary-foreground);
+}
+
+[data-document-editor]
+  .document-editor__content
+  .document-editor__checklist
+  li[aria-checked="true"]::after {
+  content: "";
+  position: absolute;
+  left: 0.32rem;
+  top: 0.7rem;
+  width: 0.58rem;
+  height: 0.35rem;
+  border: 2.5px solid var(--primary-foreground);
+  border-top: none;
+  border-right: none;
+  transform: rotate(-45deg);
+}
+
+[data-document-editor]
+  .document-editor__content
+  .document-editor__checklist
+  li:focus-visible::before,
+[data-document-editor]
+  .document-editor__content
+  .document-editor__checklist
+  li:focus-within::before {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+[data-document-editor] .document-editor__content .document-editor__checklist li:focus-visible,
+[data-document-editor] .document-editor__content .document-editor__checklist li:focus-within {
+  outline: none;
+}
+
+[data-document-editor] .document-editor__content .document-editor__checklist li.list-none {
+  padding-left: 0;
+  min-height: 0;
+}
+
+[data-document-editor] .document-editor__content .document-editor__checklist li.list-none::before,
+[data-document-editor] .document-editor__content .document-editor__checklist li.list-none::after {
+  content: none;
+}
+
+[data-document-editor]
+  .document-editor__content
+  .document-editor__checklist
+  ul[data-lexical-list-type="check"],
+[data-document-editor]
+  .document-editor__content
+  .document-editor__checklist
+  ul[data-lexical-list-type="bullet"],
+[data-document-editor]
+  .document-editor__content
+  .document-editor__checklist
+  ul[data-lexical-list-type="number"] {
+  margin-top: 0.5rem;
+}
+
+/* Chester the Mimic — keyframes and animation classes used by ChesterMimic.tsx */
+@keyframes chester-tongue {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  30% {
+    transform: rotate(3deg);
+  }
+  70% {
+    transform: rotate(-3deg);
+  }
+}
+@keyframes chester-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+@keyframes chester-bounce-fast {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+@keyframes chester-wave {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-5deg);
+  }
+  75% {
+    transform: rotate(5deg);
+  }
+}
+@keyframes chester-tilt {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(-4deg);
+  }
+}
+@keyframes chester-chomp {
+  0%,
+  100% {
+    transform: rotate(-22deg);
+  }
+  50% {
+    transform: rotate(-4deg);
+  }
+}
+@keyframes chester-sparkle {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+.animate-chester-tongue {
+  transform-origin: 16px 17px;
+  animation: chester-tongue 0.4s ease-in-out infinite;
+}
+.animate-chester-bounce {
+  animation: chester-bounce 2s ease-in-out infinite;
+}
+.animate-chester-bounce-fast {
+  animation: chester-bounce-fast 0.6s ease-in-out infinite;
+}
+.animate-chester-wave {
+  animation: chester-wave 1s ease-in-out infinite;
+}
+.animate-chester-tilt {
+  animation: chester-tilt 2.5s ease-in-out infinite;
+}
+.animate-chester-chomp {
+  animation: chester-chomp 0.35s ease-in-out infinite;
+}
+.animate-chester-sparkle {
+  animation: chester-sparkle 1.2s ease-in-out infinite;
+}
+
+/* Premium AI SaaS redesign layer: Linear-inspired density, Motion-like AI signal surfaces,
+   and ClickUp-scale data layouts without changing backend contracts. */
+:root {
+  --premium-surface: oklch(0.985 0.006 255);
+  --premium-surface-2: oklch(0.965 0.012 255);
+  --premium-border: oklch(0.91 0.018 255);
+  --premium-ai: oklch(0.55 0.18 282);
+  --premium-ai-2: oklch(0.63 0.14 215);
+  --premium-success: oklch(0.62 0.16 150);
+  --premium-warning: oklch(0.72 0.16 75);
+  --premium-danger: oklch(0.58 0.2 25);
+}
+
+.dark {
+  --premium-surface: oklch(0.17 0.035 262);
+  --premium-surface-2: oklch(0.22 0.04 262);
+  --premium-border: oklch(1 0 0 / 11%);
+  --premium-ai: oklch(0.72 0.16 286);
+  --premium-ai-2: oklch(0.72 0.13 215);
+}
+
+body {
+  background:
+    radial-gradient(circle at 18% -12%, oklch(0.72 0.16 285 / 0.16), transparent 34rem),
+    radial-gradient(circle at 86% 6%, oklch(0.7 0.14 215 / 0.12), transparent 30rem),
+    linear-gradient(180deg, var(--premium-surface), var(--background) 32rem);
+}
+
+.dark body {
+  background:
+    radial-gradient(circle at 18% -12%, oklch(0.48 0.22 285 / 0.22), transparent 34rem),
+    radial-gradient(circle at 86% 6%, oklch(0.44 0.17 215 / 0.16), transparent 30rem),
+    linear-gradient(180deg, oklch(0.12 0.045 262), var(--background) 34rem);
+}
+
+::selection {
+  background: oklch(0.68 0.18 282 / 0.24);
+}
+
+.enterprise-canvas {
+  background:
+    linear-gradient(135deg, oklch(1 0 0 / 0.72), transparent 22rem),
+    radial-gradient(circle at 100% 0%, oklch(0.7 0.16 215 / 0.12), transparent 28rem),
+    var(--background);
+}
+
+.dark .enterprise-canvas {
+  background:
+    linear-gradient(135deg, oklch(0.2 0.04 262 / 0.72), transparent 22rem),
+    radial-gradient(circle at 100% 0%, oklch(0.54 0.16 215 / 0.12), transparent 28rem),
+    var(--background);
+}
+
+.premium-topbar {
+  border-color: var(--premium-border);
+  background: color-mix(in oklch, var(--card) 76%, transparent);
+  box-shadow: 0 1px 0 oklch(1 0 0 / 0.55) inset, 0 12px 40px oklch(0.16 0.04 260 / 0.06);
+}
+
+.dark .premium-topbar {
+  box-shadow: 0 1px 0 oklch(1 0 0 / 0.06) inset, 0 14px 44px oklch(0 0 0 / 0.22);
+}
+
+.premium-page {
+  animation: premium-page-in 220ms ease-out;
+}
+
+@keyframes premium-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.premium-hero {
+  position: relative;
+  border-color: var(--premium-border);
+  background:
+    radial-gradient(circle at 12% 10%, oklch(0.72 0.17 282 / 0.18), transparent 26rem),
+    radial-gradient(circle at 82% 16%, oklch(0.72 0.13 215 / 0.14), transparent 24rem),
+    linear-gradient(135deg, color-mix(in oklch, var(--card) 98%, transparent), color-mix(in oklch, var(--muted) 74%, transparent));
+  box-shadow: 0 24px 90px oklch(0.16 0.04 260 / 0.08), 0 1px 0 oklch(1 0 0 / 0.65) inset;
+}
+
+.dark .premium-hero {
+  box-shadow: 0 24px 90px oklch(0 0 0 / 0.28), 0 1px 0 oklch(1 0 0 / 0.08) inset;
+}
+
+.premium-hero::after {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+  background-image:
+    linear-gradient(to right, oklch(0.5 0.04 260 / 0.055) 1px, transparent 1px),
+    linear-gradient(to bottom, oklch(0.5 0.04 260 / 0.055) 1px, transparent 1px);
+  background-size: 38px 38px;
+  mask-image: linear-gradient(130deg, black, transparent 72%);
+}
+
+.premium-card {
+  border-color: var(--premium-border);
+  background: color-mix(in oklch, var(--card) 88%, transparent);
+  box-shadow: 0 1px 0 oklch(1 0 0 / 0.62) inset, 0 14px 40px oklch(0.16 0.04 260 / 0.055);
+  backdrop-filter: blur(18px);
+}
+
+.dark .premium-card {
+  box-shadow: 0 1px 0 oklch(1 0 0 / 0.065) inset, 0 18px 46px oklch(0 0 0 / 0.2);
+}
+
+.ai-gradient-text {
+  background: linear-gradient(90deg, var(--premium-ai), var(--premium-ai-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.ai-ring {
+  box-shadow: 0 0 0 1px oklch(0.68 0.18 282 / 0.22), 0 0 32px oklch(0.68 0.18 282 / 0.12);
+}
+
+.command-grid-bg {
+  background-image:
+    radial-gradient(circle at 20% 0%, oklch(0.72 0.17 282 / 0.18), transparent 28rem),
+    radial-gradient(circle at 90% 0%, oklch(0.72 0.13 215 / 0.15), transparent 24rem),
+    linear-gradient(to right, oklch(0.5 0.04 260 / 0.055) 1px, transparent 1px),
+    linear-gradient(to bottom, oklch(0.5 0.04 260 / 0.055) 1px, transparent 1px);
+  background-size: auto, auto, 36px 36px, 36px 36px;
+}
+
+.premium-sidebar [data-sidebar="sidebar"] {
+  border-color: var(--premium-border);
+}
+
+.premium-sidebar [data-sidebar="menu-button"] {
+  border-radius: 0.85rem;
+}
+
+.premium-sidebar [data-sidebar="menu-button"][data-active="true"] {
+  background: linear-gradient(135deg, oklch(0.68 0.18 282 / 0.16), oklch(0.72 0.13 215 / 0.1));
+  color: var(--foreground);
+}
+
+.safe-readable-table table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.safe-readable-table th {
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Independent Frontend Phase 1 foundation
+   This layer is intentionally separate from the legacy component styling. */
+:root {
+  --ifx-font-display: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ifx-font-body: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ifx-font-mono: "SFMono-Regular", "Cascadia Code", "Roboto Mono", ui-monospace, monospace;
+
+  --ifx-surface-canvas: oklch(0.982 0.006 255.5);
+  --ifx-surface-raised: oklch(1 0 0 / 0.92);
+  --ifx-surface-overlay: oklch(1 0 0 / 0.98);
+  --ifx-surface-glass: oklch(1 0 0 / 0.68);
+  --ifx-surface-muted: oklch(0.965 0.008 255.2 / 0.8);
+
+  --ifx-text-primary: oklch(0.18 0.035 260);
+  --ifx-text-secondary: oklch(0.46 0.04 260);
+  --ifx-text-tertiary: oklch(0.62 0.035 260);
+  --ifx-text-inverse: oklch(0.98 0.004 255);
+
+  --ifx-border-subtle: oklch(0.88 0.018 255 / 0.72);
+  --ifx-border-strong: oklch(0.73 0.03 255 / 0.86);
+  --ifx-border-focus: oklch(0.64 0.18 280 / 0.72);
+
+  --ifx-intent-ai: oklch(0.62 0.23 288);
+  --ifx-intent-success: oklch(0.67 0.17 155);
+  --ifx-intent-warning: oklch(0.76 0.17 75);
+  --ifx-intent-danger: oklch(0.62 0.22 25);
+  --ifx-intent-info: oklch(0.62 0.16 235);
+
+  --ifx-radius-sm: 0.55rem;
+  --ifx-radius-md: 0.85rem;
+  --ifx-radius-lg: 1.15rem;
+  --ifx-radius-xl: 1.35rem;
+  --ifx-radius-2xl: 2rem;
+
+  --ifx-shadow-sm: 0 1px 0 oklch(1 0 0 / 0.7) inset, 0 10px 30px oklch(0.22 0.04 260 / 0.055);
+  --ifx-shadow-md: 0 1px 0 oklch(1 0 0 / 0.72) inset, 0 18px 54px oklch(0.22 0.04 260 / 0.085);
+  --ifx-shadow-lg: 0 1px 0 oklch(1 0 0 / 0.8) inset, 0 28px 90px oklch(0.22 0.04 260 / 0.12);
+  --ifx-shadow-ai: 0 20px 60px oklch(0.62 0.23 288 / 0.24);
+}
+
+.dark {
+  --ifx-surface-canvas: oklch(0.145 0.032 260);
+  --ifx-surface-raised: oklch(0.19 0.036 260 / 0.92);
+  --ifx-surface-overlay: oklch(0.18 0.036 260 / 0.98);
+  --ifx-surface-glass: oklch(0.2 0.035 260 / 0.68);
+  --ifx-surface-muted: oklch(0.235 0.035 260 / 0.76);
+
+  --ifx-text-primary: oklch(0.965 0.006 255);
+  --ifx-text-secondary: oklch(0.76 0.018 255);
+  --ifx-text-tertiary: oklch(0.62 0.022 255);
+  --ifx-text-inverse: oklch(0.16 0.035 260);
+
+  --ifx-border-subtle: oklch(1 0 0 / 0.1);
+  --ifx-border-strong: oklch(1 0 0 / 0.18);
+  --ifx-border-focus: oklch(0.72 0.18 280 / 0.78);
+
+  --ifx-shadow-sm: 0 1px 0 oklch(1 0 0 / 0.06) inset, 0 12px 34px oklch(0 0 0 / 0.22);
+  --ifx-shadow-md: 0 1px 0 oklch(1 0 0 / 0.08) inset, 0 18px 54px oklch(0 0 0 / 0.28);
+  --ifx-shadow-lg: 0 1px 0 oklch(1 0 0 / 0.09) inset, 0 28px 90px oklch(0 0 0 / 0.38);
+  --ifx-shadow-ai: 0 20px 70px oklch(0.62 0.23 288 / 0.18);
+}
+
+html[data-ifx-density="compact"] {
+  --ifx-control-y: 0.42rem;
+  --ifx-page-y: 1rem;
+}
+
+html[data-ifx-density="comfortable"] {
+  --ifx-control-y: 0.56rem;
+  --ifx-page-y: 1.5rem;
+}
+
+html[data-ifx-density="spacious"] {
+  --ifx-control-y: 0.72rem;
+  --ifx-page-y: 2rem;
+}
+
+.ifx-shell {
+  font-family: var(--ifx-font-body);
+  background:
+    radial-gradient(circle at 14% -10%, oklch(0.68 0.2 285 / 0.18), transparent 30rem),
+    radial-gradient(circle at 92% 8%, oklch(0.72 0.15 220 / 0.16), transparent 26rem),
+    linear-gradient(180deg, var(--ifx-surface-canvas), color-mix(in oklch, var(--ifx-surface-canvas) 90%, black 2%));
+}
+
+.ifx-sidebar {
+  box-shadow: 1px 0 0 oklch(1 0 0 / 0.5) inset, 24px 0 80px oklch(0.2 0.04 260 / 0.05);
+}
+
+.dark .ifx-sidebar {
+  box-shadow: 1px 0 0 oklch(1 0 0 / 0.05) inset, 24px 0 80px oklch(0 0 0 / 0.24);
+}
+
+.ifx-glass-panel {
+  background:
+    linear-gradient(135deg, color-mix(in oklch, var(--ifx-surface-glass) 94%, transparent), color-mix(in oklch, var(--ifx-surface-muted) 74%, transparent));
+  box-shadow: var(--ifx-shadow-sm);
+  backdrop-filter: blur(18px) saturate(1.1);
+}
+
+.ifx-ai-panel {
+  background:
+    radial-gradient(circle at 0% 0%, oklch(0.67 0.22 288 / 0.18), transparent 24rem),
+    radial-gradient(circle at 100% 0%, oklch(0.72 0.16 220 / 0.16), transparent 20rem),
+    linear-gradient(135deg, color-mix(in oklch, var(--ifx-surface-raised) 90%, transparent), color-mix(in oklch, var(--ifx-surface-muted) 70%, transparent));
+  box-shadow: var(--ifx-shadow-ai), var(--ifx-shadow-sm);
+  backdrop-filter: blur(18px) saturate(1.1);
+}
+
+.ifx-page-frame {
+  animation: ifx-page-enter 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.ifx-page-hero {
+  position: relative;
+  overflow: hidden;
+  border-color: var(--ifx-border-subtle);
+  background:
+    radial-gradient(circle at 14% 8%, oklch(0.68 0.2 285 / 0.18), transparent 28rem),
+    radial-gradient(circle at 84% 8%, oklch(0.7 0.15 220 / 0.14), transparent 24rem),
+    linear-gradient(135deg, color-mix(in oklch, var(--ifx-surface-raised) 96%, transparent), color-mix(in oklch, var(--ifx-surface-muted) 76%, transparent));
+  box-shadow: var(--ifx-shadow-md);
+}
+
+.ifx-page-hero::after {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+  background-image:
+    linear-gradient(to right, oklch(0.5 0.04 260 / 0.055) 1px, transparent 1px),
+    linear-gradient(to bottom, oklch(0.5 0.04 260 / 0.055) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: linear-gradient(130deg, black, transparent 72%);
+}
+
+@keyframes ifx-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ifx-page-frame,
+  .premium-page {
+    animation: none;
+  }
+
+  .ifx-shell *,
+  .premium-page * {
+    transition-duration: 0ms !important;
+  }
+}
+
+/* Independent frontend phase 8: accessibility, responsive and motion QA hardening. */
+.ifx-skip-links {
+  position: fixed;
+  inset-block-start: 0.75rem;
+  inset-inline-start: 0.75rem;
+  z-index: 9999;
+  display: flex;
+  gap: 0.5rem;
+  pointer-events: none;
+}
+
+.ifx-skip-links a {
+  transform: translateY(-150%);
+  border: 1px solid var(--ifx-border-focus, var(--ring));
+  border-radius: 999px;
+  background: var(--ifx-surface-raised, var(--background));
+  color: var(--ifx-text-primary, var(--foreground));
+  padding: 0.625rem 0.875rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  box-shadow: var(--ifx-shadow-lg, 0 16px 36px rgb(15 23 42 / 0.18));
+  opacity: 0;
+  transition:
+    transform 160ms ease,
+    opacity 160ms ease;
+  pointer-events: auto;
+}
+
+.ifx-skip-links a:focus-visible {
+  transform: translateY(0);
+  opacity: 1;
+  outline: 3px solid color-mix(in oklch, var(--ring) 44%, transparent);
+  outline-offset: 3px;
+}
+
+#ifx-main-content:focus-visible {
+  outline: 3px solid color-mix(in oklch, var(--ring) 34%, transparent);
+  outline-offset: 0.35rem;
+  border-radius: var(--ifx-radius-xl, 1rem);
+}
+
+@media (max-width: 767px) {
+  .ifx-shell main {
+    padding-inline: max(1rem, var(--safe-area-inset-left));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  .ifx-ai-panel,
+  .ifx-glass-panel,
+  .enterprise-canvas,
+  body {
+    background-attachment: initial !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --ifx-border-subtle: color-mix(in oklch, var(--ifx-text-primary) 34%, transparent);
+  }
+
+  .ifx-shell button:focus-visible,
+  .ifx-shell a:focus-visible,
+  .ifx-shell input:focus-visible,
+  .ifx-shell textarea:focus-visible,
+  .ifx-shell [role="button"]:focus-visible {
+    outline: 3px solid var(--ring);
+    outline-offset: 3px;
+  }
+}

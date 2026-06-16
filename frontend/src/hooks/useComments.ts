@@ -1,0 +1,178 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+import {
+  createCommentApiV1CommentsPost,
+  deleteCommentApiV1CommentsCommentIdDelete,
+  getListCommentsApiV1CommentsGetQueryKey,
+  getRecentCommentsApiV1CommentsRecentGetQueryKey,
+  getSearchMentionablesApiV1CommentsMentionsSearchGetQueryKey,
+  listCommentsApiV1CommentsGet,
+  recentCommentsApiV1CommentsRecentGet,
+  searchMentionablesApiV1CommentsMentionsSearchGet,
+  updateCommentApiV1CommentsCommentIdPatch,
+} from "@/api/generated/comments/comments";
+import type {
+  CommentRead,
+  ListCommentsApiV1CommentsGetParams,
+  MentionEntityType,
+  MentionSuggestion,
+  RecentActivityEntry,
+  RecentCommentsApiV1CommentsRecentGetParams,
+} from "@/api/generated/initiativeAPI.schemas";
+import { invalidateAllComments } from "@/api/query-keys";
+import { toast } from "@/lib/chesterToast";
+import { getErrorMessage } from "@/lib/errorMessage";
+import { castQueryFn } from "@/lib/query-utils";
+import type { MutationOpts } from "@/types/mutation";
+import type { QueryOpts } from "@/types/query";
+
+// ── Queries ─────────────────────────────────────────────────────────────────
+
+export const useComments = (
+  params: ListCommentsApiV1CommentsGetParams,
+  options?: QueryOpts<CommentRead[]>
+) => {
+  return useQuery<CommentRead[]>({
+    queryKey: getListCommentsApiV1CommentsGetQueryKey(params),
+    queryFn: castQueryFn<CommentRead[]>(() => listCommentsApiV1CommentsGet(params)),
+    ...options,
+  });
+};
+
+export const useRecentComments = (
+  params?: RecentCommentsApiV1CommentsRecentGetParams,
+  options?: QueryOpts<RecentActivityEntry[]>
+) => {
+  return useQuery<RecentActivityEntry[]>({
+    queryKey: getRecentCommentsApiV1CommentsRecentGetQueryKey(params),
+    queryFn: castQueryFn<RecentActivityEntry[]>(() => recentCommentsApiV1CommentsRecentGet(params)),
+    staleTime: 30 * 1000,
+    ...options,
+  });
+};
+
+export const useMentionSuggestions = (
+  type: MentionEntityType,
+  initiativeId: number,
+  query: string,
+  options?: QueryOpts<MentionSuggestion[]>
+) => {
+  return useQuery<MentionSuggestion[]>({
+    queryKey: getSearchMentionablesApiV1CommentsMentionsSearchGetQueryKey({
+      entity_type: type,
+      initiative_id: initiativeId,
+      q: query,
+    }),
+    queryFn: castQueryFn<MentionSuggestion[]>(() =>
+      searchMentionablesApiV1CommentsMentionsSearchGet({
+        entity_type: type,
+        initiative_id: initiativeId,
+        q: query,
+      })
+    ),
+    staleTime: 30_000,
+    enabled: initiativeId > 0,
+    ...options,
+  });
+};
+
+// ── Cache helpers ───────────────────────────────────────────────────────────
+
+export const useCommentsCache = (params: ListCommentsApiV1CommentsGetParams) => {
+  const qc = useQueryClient();
+  const queryKey = getListCommentsApiV1CommentsGetQueryKey(params);
+
+  const addComment = (comment: CommentRead) => {
+    qc.setQueryData<CommentRead[]>(queryKey, (prev) => (prev ? [...prev, comment] : [comment]));
+  };
+
+  const removeComment = (commentId: number) => {
+    qc.setQueryData<CommentRead[]>(queryKey, (prev) => prev?.filter((c) => c.id !== commentId));
+  };
+
+  const updateComment = (updated: CommentRead) => {
+    qc.setQueryData<CommentRead[]>(queryKey, (prev) =>
+      prev?.map((c) => (c.id === updated.id ? updated : c))
+    );
+  };
+
+  return { addComment, removeComment, updateComment };
+};
+
+// ── Mutations ───────────────────────────────────────────────────────────────
+
+export const useCreateComment = (
+  options?: MutationOpts<CommentRead, Parameters<typeof createCommentApiV1CommentsPost>[0]>
+) => {
+  const { onSuccess, onError, onSettled, ...rest } = options ?? {};
+
+  return useMutation({
+    ...rest,
+    mutationFn: async (data: Parameters<typeof createCommentApiV1CommentsPost>[0]) => {
+      return createCommentApiV1CommentsPost(data) as unknown as Promise<CommentRead>;
+    },
+    onSuccess: (...args) => {
+      void invalidateAllComments();
+      onSuccess?.(...args);
+    },
+    onError: (...args) => {
+      toast.error(getErrorMessage(args[0], "common:error"));
+      onError?.(...args);
+    },
+    onSettled,
+  });
+};
+
+export const useUpdateComment = (
+  options?: MutationOpts<
+    CommentRead,
+    { commentId: number; data: Parameters<typeof updateCommentApiV1CommentsCommentIdPatch>[1] }
+  >
+) => {
+  const { onSuccess, onError, onSettled, ...rest } = options ?? {};
+
+  return useMutation({
+    ...rest,
+    mutationFn: async ({
+      commentId,
+      data,
+    }: {
+      commentId: number;
+      data: Parameters<typeof updateCommentApiV1CommentsCommentIdPatch>[1];
+    }) => {
+      return updateCommentApiV1CommentsCommentIdPatch(
+        commentId,
+        data
+      ) as unknown as Promise<CommentRead>;
+    },
+    onSuccess: (...args) => {
+      void invalidateAllComments();
+      onSuccess?.(...args);
+    },
+    onError: (...args) => {
+      toast.error(getErrorMessage(args[0], "common:error"));
+      onError?.(...args);
+    },
+    onSettled,
+  });
+};
+
+export const useDeleteComment = (options?: MutationOpts<void, number>) => {
+  const { onSuccess, onError, onSettled, ...rest } = options ?? {};
+
+  return useMutation({
+    ...rest,
+    mutationFn: async (commentId: number) => {
+      await deleteCommentApiV1CommentsCommentIdDelete(commentId);
+    },
+    onSuccess: (...args) => {
+      void invalidateAllComments();
+      onSuccess?.(...args);
+    },
+    onError: (...args) => {
+      toast.error(getErrorMessage(args[0], "common:error"));
+      onError?.(...args);
+    },
+    onSettled,
+  });
+};

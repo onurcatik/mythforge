@@ -1,0 +1,201 @@
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
+
+import { setDocumentTagsApiV1DocumentsDocumentIdTagsPut } from "@/api/generated/documents/documents";
+import type {
+  DocumentRead,
+  ProjectRead,
+  TagCreate,
+  TaggedEntitiesResponse,
+  TagRead,
+  TagUpdate,
+  TaskListRead,
+} from "@/api/generated/initiativeAPI.schemas";
+import { setProjectTagsApiV1ProjectsProjectIdTagsPut } from "@/api/generated/projects/projects";
+import {
+  createTagApiV1TagsPost,
+  deleteTagApiV1TagsTagIdDelete,
+  getGetTagApiV1TagsTagIdGetQueryKey,
+  getGetTagEntitiesApiV1TagsTagIdEntitiesGetQueryKey,
+  getListTagsApiV1TagsGetQueryKey,
+  getTagApiV1TagsTagIdGet,
+  getTagEntitiesApiV1TagsTagIdEntitiesGet,
+  listTagsApiV1TagsGet,
+  updateTagApiV1TagsTagIdPatch,
+} from "@/api/generated/tags/tags";
+import { setTaskTagsApiV1TasksTaskIdTagsPut } from "@/api/generated/tasks/tasks";
+import {
+  invalidateAllDocuments,
+  invalidateAllProjects,
+  invalidateAllTags,
+  invalidateAllTasks,
+} from "@/api/query-keys";
+import { toast } from "@/lib/chesterToast";
+import { getErrorMessage } from "@/lib/errorMessage";
+import type { MutationOpts } from "@/types/mutation";
+
+export const useTags = () => {
+  return useQuery<TagRead[]>({
+    queryKey: getListTagsApiV1TagsGetQueryKey(),
+    queryFn: () => listTagsApiV1TagsGet() as unknown as Promise<TagRead[]>,
+    staleTime: 60 * 1000,
+  });
+};
+
+export const useTag = (tagId: number | null) => {
+  return useQuery<TagRead>({
+    queryKey: getGetTagApiV1TagsTagIdGetQueryKey(tagId!),
+    queryFn: () => getTagApiV1TagsTagIdGet(tagId!) as unknown as Promise<TagRead>,
+    enabled: !!tagId,
+    staleTime: 60 * 1000,
+  });
+};
+
+export const useCreateTag = (options?: MutationOpts<TagRead, TagCreate>) => {
+  const { onSuccess, onError, onSettled, ...rest } = options ?? {};
+
+  return useMutation({
+    ...rest,
+    mutationFn: async (data: TagCreate) => {
+      return createTagApiV1TagsPost(data) as unknown as Promise<TagRead>;
+    },
+    onSuccess: (...args) => {
+      void invalidateAllTags();
+      onSuccess?.(...args);
+    },
+    onError: (...args) => {
+      toast.error(getErrorMessage(args[0], "tags:createError"));
+      onError?.(...args);
+    },
+    onSettled,
+  });
+};
+
+export const useUpdateTag = (
+  options?: MutationOpts<TagRead, { tagId: number; data: TagUpdate }>
+) => {
+  const { t } = useTranslation("tags");
+  const { onSuccess, onError, onSettled, ...rest } = options ?? {};
+
+  return useMutation({
+    ...rest,
+    mutationFn: async ({ tagId, data }: { tagId: number; data: TagUpdate }) => {
+      return updateTagApiV1TagsTagIdPatch(tagId, data) as unknown as Promise<TagRead>;
+    },
+    onSuccess: (...args) => {
+      toast.success(t("updated"));
+      void invalidateAllTags();
+      onSuccess?.(...args);
+    },
+    onError: (...args) => {
+      toast.error(getErrorMessage(args[0], "tags:updateError"));
+      onError?.(...args);
+    },
+    onSettled,
+  });
+};
+
+export const useDeleteTag = (options?: MutationOpts<void, number>) => {
+  const { t } = useTranslation("tags");
+  const { onSuccess, onError, onSettled, ...rest } = options ?? {};
+
+  return useMutation({
+    ...rest,
+    mutationFn: async (tagId: number) => {
+      await deleteTagApiV1TagsTagIdDelete(tagId);
+    },
+    onSuccess: (...args) => {
+      toast.success(t("deleted"));
+      void invalidateAllTags();
+      void invalidateAllTasks();
+      onSuccess?.(...args);
+    },
+    onError: (...args) => {
+      toast.error(getErrorMessage(args[0], "tags:deleteError"));
+      onError?.(...args);
+    },
+    onSettled,
+  });
+};
+
+export const useSetTaskTags = (
+  options?: MutationOpts<TaskListRead, { taskId: number; tagIds: number[] }>
+) => {
+  const { onSuccess, onError, onSettled, ...rest } = options ?? {};
+
+  return useMutation({
+    ...rest,
+    mutationFn: async ({ taskId, tagIds }: { taskId: number; tagIds: number[] }) => {
+      return setTaskTagsApiV1TasksTaskIdTagsPut(taskId, {
+        tag_ids: tagIds,
+      }) as unknown as Promise<TaskListRead>;
+    },
+    onSuccess: (...args) => {
+      void invalidateAllTasks();
+      onSuccess?.(...args);
+    },
+    onError: (...args) => {
+      toast.error(getErrorMessage(args[0], "tags:taskTagsError"));
+      onError?.(...args);
+    },
+    onSettled,
+  });
+};
+
+export const useTagEntities = (tagId: number | null) => {
+  return useQuery<TaggedEntitiesResponse>({
+    queryKey: getGetTagEntitiesApiV1TagsTagIdEntitiesGetQueryKey(tagId!),
+    queryFn: () =>
+      getTagEntitiesApiV1TagsTagIdEntitiesGet(tagId!) as unknown as Promise<TaggedEntitiesResponse>,
+    enabled: !!tagId,
+    staleTime: 30 * 1000,
+  });
+};
+
+export const useSetProjectTags = (
+  options?: MutationOpts<ProjectRead, { projectId: number; tagIds: number[] }>
+) => {
+  const { onSuccess, onError, onSettled, ...rest } = options ?? {};
+
+  return useMutation({
+    ...rest,
+    mutationFn: async ({ projectId, tagIds }: { projectId: number; tagIds: number[] }) => {
+      return setProjectTagsApiV1ProjectsProjectIdTagsPut(projectId, {
+        tag_ids: tagIds,
+      }) as unknown as Promise<ProjectRead>;
+    },
+    onSuccess: (...args) => {
+      void invalidateAllProjects();
+      onSuccess?.(...args);
+    },
+    onError: (...args) => {
+      toast.error(getErrorMessage(args[0], "tags:projectTagsError"));
+      onError?.(...args);
+    },
+    onSettled,
+  });
+};
+
+export const useSetDocumentTags = (
+  options?: MutationOpts<DocumentRead, { documentId: number; tagIds: number[] }>
+) => {
+  const { onSuccess, onError, onSettled, ...rest } = options ?? {};
+
+  return useMutation({
+    ...rest,
+    mutationFn: async ({ documentId, tagIds }: { documentId: number; tagIds: number[] }) => {
+      return setDocumentTagsApiV1DocumentsDocumentIdTagsPut(documentId, {
+        tag_ids: tagIds,
+      }) as unknown as Promise<DocumentRead>;
+    },
+    onSuccess: (...args) => {
+      void invalidateAllDocuments();
+      onSuccess?.(...args);
+    },
+    onError: (...args) => {
+      toast.error(getErrorMessage(args[0], "tags:documentTagsError"));
+      onError?.(...args);
+    },
+    onSettled,
+  });
+};

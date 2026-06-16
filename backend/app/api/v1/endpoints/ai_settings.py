@@ -1,0 +1,248 @@
+"""AI Settings API endpoints.
+
+Provides hierarchical AI settings management:
+- Platform level: Platform admins only
+- Guild level: Guild admins
+- User level: Any authenticated user (if allowed)
+"""
+
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, status
+
+from app.api.deps import (
+    GuildContext,
+    RLSSessionDep,
+    SessionDep,
+    get_current_active_user,
+    get_guild_membership,
+    require_guild_roles,
+)
+from app.api.v1.endpoints.admin import ConfigManageDep
+from app.models.guild import GuildRole
+from app.core.capabilities import Capability, user_has_capability
+from app.models.user import User
+from app.schemas.ai_settings import (
+    AIModelsRequest,
+    AIModelsResponse,
+    AIOllamaHealthRequest,
+    AIOllamaHealthResponse,
+    AITestConnectionRequest,
+    AITestConnectionResponse,
+    GuildAISettingsResponse,
+    GuildAISettingsUpdate,
+    PlatformAISettingsResponse,
+    PlatformAISettingsUpdate,
+    ResolvedAISettingsResponse,
+    UserAISettingsResponse,
+    UserAISettingsUpdate,
+)
+from app.services import ai_settings as ai_settings_service
+from app.services.ai.providers.ollama_openai_adapter import health as ollama_health
+from app.services.webhook_target_url import (
+    WebhookTargetUrlError,
+    WebhookTargetUrlPrivateError,
+    assert_target_url_is_public_async,
+)
+
+router = APIRouter()
+
+GuildAdminContext = Annotated[GuildContext, Depends(require_guild_roles(GuildRole.admin))]
+GuildContextDep = Annotated[GuildContext, Depends(get_guild_membership)]
+
+
+# Platform-level endpoints (platform admin only)
+@router.get("/ai/platform", response_model=PlatformAISettingsResponse)
+async def get_platform_ai_settings(
+    session: SessionDep,
+    _admin: ConfigManageDep,
+) -> PlatformAISettingsResponse:
+    """Get platform-level AI settings. Platform admin only."""
+    return await ai_settings_service.get_platform_ai_settings(session)
+
+
+@router.put("/ai/platform", response_model=PlatformAISettingsResponse)
+async def update_platform_ai_settings(
+    payload: PlatformAISettingsUpdate,
+    session: SessionDep,
+    _admin: ConfigManageDep,
+) -> PlatformAISettingsResponse:
+    """Update platform-level AI settings. Platform admin only."""
+    data = payload.model_dump(exclude_unset=True)
+    api_key_provided = "api_key" in data
+    return await ai_settings_service.update_platform_ai_settings(
+        session, payload, api_key_provided=api_key_provided
+    )
+
+
+# Guild-level endpoints (guild admin only)
+@router.get("/ai/guild", response_model=GuildAISettingsResponse)
+async def get_guild_ai_settings(
+    session: RLSSessionDep,
+    guild_ctx: GuildAdminContext,
+) -> GuildAISettingsResponse:
+    """Get guild-level AI settings. Guild admin only."""
+    return await ai_settings_service.get_guild_ai_settings(session, guild_ctx.guild_id)
+
+
+@router.put("/ai/guild", response_model=GuildAISettingsResponse)
+async def update_guild_ai_settings(
+    payload: GuildAISettingsUpdate,
+    session: RLSSessionDep,
+    guild_ctx: GuildAdminContext,
+) -> GuildAISettingsResponse:
+    """Update guild-level AI settings. Guild admin only."""
+    try:
+        data = payload.model_dump(exclude_unset=True)
+        api_key_provided = "api_key" in data
+        return await ai_settings_service.update_guild_ai_settings(
+            session, guild_ctx.guild_id, payload, api_key_provided=api_key_provided
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
+
+# User-level endpoints (any authenticated user)
+@router.get("/ai/user", response_model=UserAISettingsResponse)
+async def get_user_ai_settings(
+    session: RLSSessionDep,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    guild_context: GuildContextDep,
+) -> UserAISettingsResponse:
+    """Get user-level AI settings."""
+    return await ai_settings_service.get_user_ai_settings(session, current_user, guild_context.guild_id)
+
+
+@router.put("/ai/user", response_model=UserAISettingsResponse)
+async def update_user_ai_settings(
+    payload: UserAISettingsUpdate,
+    session: RLSSessionDep,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    guild_context: GuildContextDep,
+) -> UserAISettingsResponse:
+    """Update user-level AI settings."""
+    try:
+        data = payload.model_dump(exclude_unset=True)
+        api_key_provided = "api_key" in data
+        return await ai_settings_service.update_user_ai_settings(
+            session, current_user, payload, guild_context.guild_id, api_key_provided=api_key_provided
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
+
+# Resolved settings endpoint (any authenticated user)
+@router.get("/ai/resolved", response_model=ResolvedAISettingsResponse)
+async def get_resolved_ai_settings(
+    session: RLSSessionDep,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    guild_context: GuildContextDep,
+) -> ResolvedAISettingsResponse:
+    """Get resolved (effective) AI settings for the current user.
+
+    This returns the final computed settings without exposing API keys.
+    """
+    return await ai_settings_service.get_resolved_ai_settings_response(session, current_user, guild_context.guild_id)
+
+
+# Test connection endpoint (any authenticated user)
+@router.post("/ai/test", response_model=AITestConnectionResponse)
+async def test_ai_connection(
+    payload: AITestConnectionRequest,
+    session: RLSSessionDep,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    guild_context: GuildContextDep,
+) -> AITestConnectionResponse:
+    """Test connection to an AI provider.
+
+    If no API key is provided in the request, it will use the existing
+    key from the user's resolved settings.
+    """
+    api_key = payload.api_key
+    if not api_key:
+        resolved = await ai_settings_service.resolve_ai_settings(session, current_user, guild_context.guild_id)
+        api_key = resolved.api_key
+
+    bypass_ssrf = user_has_capability(current_user, Capability.CONFIG_MANAGE)
+    return await ai_settings_service.test_ai_connection(
+        payload, existing_api_key=api_key, bypass_ssrf=bypass_ssrf
+    )
+
+
+# Fetch models endpoint (any authenticated user)
+@router.post("/ai/models", response_model=AIModelsResponse)
+async def fetch_ai_models(
+    payload: AIModelsRequest,
+    session: RLSSessionDep,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    guild_context: GuildContextDep,
+) -> AIModelsResponse:
+    """Fetch available models from an AI provider.
+
+    If no API key is provided in the request, it will use the existing
+    key from the user's resolved settings.
+    """
+    api_key = payload.api_key
+    if not api_key:
+        resolved = await ai_settings_service.resolve_ai_settings(session, current_user, guild_context.guild_id)
+        api_key = resolved.api_key
+
+    bypass_ssrf = user_has_capability(current_user, Capability.CONFIG_MANAGE)
+    models, error = await ai_settings_service.fetch_models(
+        payload.provider,
+        api_key,
+        payload.base_url,
+        bypass_ssrf=bypass_ssrf,
+    )
+
+    return AIModelsResponse(models=models, error=error)
+
+
+@router.post("/ai/ollama/health", response_model=AIOllamaHealthResponse)
+async def check_ollama_health(
+    payload: AIOllamaHealthRequest,
+    session: RLSSessionDep,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    guild_context: GuildContextDep,
+) -> AIOllamaHealthResponse:
+    """Check Ollama connectivity and model availability without exposing secrets."""
+    resolved = await ai_settings_service.resolve_ai_settings(session, current_user, guild_context.guild_id)
+    api_key = payload.api_key or (resolved.api_key if getattr(resolved.provider, "value", resolved.provider) == "ollama" else None)
+    base_url = payload.base_url or (resolved.base_url if getattr(resolved.provider, "value", resolved.provider) == "ollama" else None)
+    model = payload.model or (resolved.model if getattr(resolved.provider, "value", resolved.provider) == "ollama" else None)
+    embedding_model = payload.embedding_model or (resolved.embedding_model if getattr(resolved.provider, "value", resolved.provider) == "ollama" else None)
+
+    bypass_ssrf = user_has_capability(current_user, Capability.CONFIG_MANAGE)
+    if base_url and not bypass_ssrf:
+        # Local Ollama commonly runs on localhost from the application host.
+        # Keep the SSRF guard for non-local remote endpoints.
+        from urllib.parse import urlparse
+        host = (urlparse(base_url).hostname or "").lower()
+        if host not in {"localhost", "127.0.0.1", "::1"}:
+            try:
+                await assert_target_url_is_public_async(base_url)
+            except (WebhookTargetUrlError, WebhookTargetUrlPrivateError) as exc:
+                return AIOllamaHealthResponse(
+                    ok=False,
+                    base_url=base_url,
+                    models=[],
+                    selected_model=model,
+                    selected_model_available=False if model else None,
+                    embedding_model=embedding_model,
+                    embedding_model_available=False if embedding_model else None,
+                    latency_ms=0,
+                    message=f"Invalid base URL: {exc}",
+                )
+
+    result = await ollama_health(base_url=base_url, api_key=api_key, model=model)
+    return AIOllamaHealthResponse(
+        ok=result.ok,
+        base_url=result.base_url,
+        models=result.models,
+        selected_model=result.selected_model,
+        selected_model_available=result.selected_model_available,
+        embedding_model=embedding_model,
+        embedding_model_available=(embedding_model in result.models) if embedding_model else None,
+        latency_ms=result.latency_ms,
+        message=result.message,
+    )

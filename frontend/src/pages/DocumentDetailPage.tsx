@@ -1,0 +1,1793 @@
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { formatDistanceToNow } from "date-fns";
+import type { SerializedEditorState } from "lexical";
+import {
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  ImagePlus,
+  Loader2,
+  Maximize2,
+  Minimize2,
+  PanelRight,
+  Save,
+  ScrollText,
+  SearchX,
+  Settings,
+  ShieldAlert,
+  X,
+} from "lucide-react";
+import {
+  type ChangeEvent,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useTranslation } from "react-i18next";
+
+import { API_BASE_URL } from "@/api/client";
+import { notifyMentionsApiV1DocumentsDocumentIdMentionsPost } from "@/api/generated/documents/documents";
+import { getOpenAICommandCenter } from "@/components/CommandCenter";
+import { CommentSection } from "@/components/comments/CommentSection";
+import { CreateWikilinkDocumentDialog } from "@/components/documents/CreateWikilinkDocumentDialog";
+import { DocumentBacklinks } from "@/components/documents/DocumentBacklinks";
+import {
+  DocumentSidePanel,
+  useDocumentSidePanel,
+} from "@/components/documents/DocumentSidePanel";
+import { DocumentSummary } from "@/components/documents/DocumentSummary";
+import { CollaborationStatusBadge } from "@/components/documents/editor/CollaborationStatusBadge";
+import { AddPropertyButton } from "@/components/properties/AddPropertyButton";
+import { PropertyList } from "@/components/properties/PropertyList";
+import { StatusMessage } from "@/components/StatusMessage";
+import { TagPicker } from "@/components/tags/TagPicker";
+import { useComments, useCommentsCache } from "@/hooks/useComments";
+import {
+  useDocument,
+  useSetDocumentCache,
+  useUpdateDocument,
+} from "@/hooks/useDocuments";
+import { useSetDocumentProperties } from "@/hooks/useProperties";
+import { useRecordRecentView } from "@/hooks/useRecents";
+import { useSetDocumentTags } from "@/hooks/useTags";
+import { toast } from "@/lib/chesterToast";
+import {
+  createEmptyEditorState,
+  normalizeEditorState,
+} from "@/lib/editorState";
+
+// Lazy load heavy components
+const Editor = lazy(() =>
+  import("@/components/documents/editor/editor").then((m) => ({
+    default: m.Editor,
+  })),
+);
+const FileDocumentViewer = lazy(() =>
+  import("@/components/documents/FileDocumentViewer").then((m) => ({
+    default: m.FileDocumentViewer,
+  })),
+);
+const SpreadsheetDocumentEditor = lazy(() =>
+  import("@/components/documents/SpreadsheetDocumentEditor").then((m) => ({
+    default: m.SpreadsheetDocumentEditor,
+  })),
+);
+const WhiteboardDocumentEditor = lazy(() =>
+  import("@/components/documents/WhiteboardDocumentEditor").then((m) => ({
+    default: m.WhiteboardDocumentEditor,
+  })),
+);
+const SmartLinkDocumentViewer = lazy(() =>
+  import("@/components/documents/SmartLinkDocumentViewer").then((m) => ({
+    default: m.SmartLinkDocumentViewer,
+  })),
+);
+
+import type { ProviderAwareness } from "@lexical/yjs";
+import type * as Y from "yjs";
+
+import type {
+  CommentRead,
+  DocumentProjectLink,
+  PropertyDefinitionRead,
+  PropertySummary,
+  TagSummary,
+} from "@/api/generated/initiativeAPI.schemas";
+import type { SmartLinkContent } from "@/components/documents/SmartLinkDocumentViewer";
+import type { SpreadsheetContent } from "@/components/documents/SpreadsheetDocumentEditor";
+import type { WhiteboardScene } from "@/components/documents/WhiteboardDocumentEditor";
+import { Badge } from "@/components/ui/badge";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useAIEnabled } from "@/hooks/useAIEnabled";
+import { useAuth } from "@/hooks/useAuth";
+import { useCollaboration } from "@/hooks/useCollaboration";
+import { useDateLocale } from "@/hooks/useDateLocale";
+import { useGuilds } from "@/hooks/useGuilds";
+import { useNetworkStatus } from "@/hooks/useNetworkStatus";
+import { uploadAttachment } from "@/lib/attachmentUtils";
+import { getHttpStatus } from "@/lib/errorMessage";
+import { useGuildPath } from "@/lib/guildUrl";
+import { InitiativeColorDot } from "@/lib/initiativeColors";
+import { findNewMentions } from "@/lib/mentionUtils";
+import { getItem, removeItem, setItem } from "@/lib/storage";
+import { resolveUploadUrl } from "@/lib/uploadUrl";
+import { cn } from "@/lib/utils";
+import { DocumentDetailKnowledgeRoom } from "@/widgets/work-core";
+
+export const DocumentDetailPage = () => {
+  const { t } = useTranslation(["documents", "properties", "common"]);
+  const dateLocale = useDateLocale();
+  const { documentId } = useParams({ strict: false }) as { documentId: string };
+  const parsedId = Number(documentId);
+  const navigate = useNavigate();
+  const setDocumentCache = useSetDocumentCache();
+  const { user, token } = useAuth();
+  const { activeGuildId } = useGuilds();
+  const gp = useGuildPath();
+  const sidePanel = useDocumentSidePanel();
+  const { isEnabled: isAIEnabled } = useAIEnabled();
+  const setDocumentTagsMutation = useSetDocumentTags();
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [featuredImageUrl, setFeaturedImageUrl] = useState<string | null>(null);
+  const [tags, setTags] = useState<TagSummary[]>([]);
+  // Locally-added property definitions that don't yet have a persisted value.
+  // Rendered alongside `document.properties` as empty-valued stubs so the user
+  // can fill them in; PropertyList's PUT persists them once a value is set.
+  const [pendingProperties, setPendingProperties] = useState<
+    PropertyDefinitionRead[]
+  >([]);
+  const setDocumentPropertiesMutation = useSetDocumentProperties();
+  // Persisted collapse state for the metadata card (mirrors the pattern used
+  // by the Documents section on project pages).
+  const metadataCollapsedStorageKey = "document:metadataCollapsed";
+  const [isMetadataCollapsed, setIsMetadataCollapsed] = useState<boolean>(
+    () => getItem(metadataCollapsedStorageKey) === "true",
+  );
+  const [isUploadingFeaturedImage, setIsUploadingFeaturedImage] =
+    useState(false);
+  const [title, setTitle] = useState("");
+  const [contentState, setContentState] = useState<SerializedEditorState>(
+    createEmptyEditorState(),
+  );
+  const [whiteboardScene, setWhiteboardScene] = useState<WhiteboardScene>(
+    () => ({
+      elements: [],
+      appState: {},
+      files: {},
+    }),
+  );
+  // Flipped true once the load effect has populated whiteboardScene from
+  // localStorage cache or REST content. The WhiteboardDocumentEditor must
+  // not mount until this is true — otherwise its useMemo([]) captures the
+  // empty default from useState, and Excalidraw renders a blank canvas
+  // that never updates when the real scene arrives via the load effect.
+  const [whiteboardSceneReady, setWhiteboardSceneReady] = useState(false);
+  // True when the initial whiteboard scene was loaded from the localStorage
+  // write-ahead cache (i.e. the user has unsaved local edits). Passed down
+  // so the editor's post-sync bootstrap knows NOT to overwrite the canvas
+  // with the Yjs state (which would clobber the unsaved local work).
+  const [whiteboardSceneFromCache, setWhiteboardSceneFromCache] =
+    useState(false);
+  const [whiteboardYDoc, setWhiteboardYDoc] = useState<Y.Doc | null>(null);
+  const [whiteboardAwareness, setWhiteboardAwareness] =
+    useState<ProviderAwareness | null>(null);
+  const [spreadsheetYDoc, setSpreadsheetYDoc] = useState<Y.Doc | null>(null);
+  const [spreadsheetAwareness, setSpreadsheetAwareness] =
+    useState<ProviderAwareness | null>(null);
+  // Memoized so the spreadsheet editor's awareness effects key on the
+  // user identity rather than the inline-object reference, which would
+  // change every parent render and broadcast spurious presence
+  // updates.
+  const spreadsheetCurrentUser = useMemo(
+    () =>
+      user
+        ? { id: user.id, name: user.full_name || user.email || "Anonymous" }
+        : null,
+    [user],
+  );
+  const [autosaveEnabled, setAutosaveEnabled] = useState(true);
+  const [collaborationEnabled, setCollaborationEnabled] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const isAutosaveRef = useRef(false);
+  const featuredImageInputRef = useRef<HTMLInputElement>(null);
+  // Refs for sendBeacon - need latest values in event handlers
+  const contentStateRef = useRef<{
+    documentId: number;
+    content: SerializedEditorState;
+  } | null>(null);
+  const collaboratingRef = useRef(false);
+  const syncContentBeaconRef = useRef<(() => void) | null>(null);
+
+  // Wikilink dialog state
+  const [wikilinkDialogOpen, setWikilinkDialogOpen] = useState(false);
+  const [wikilinkTitle, setWikilinkTitle] = useState("");
+  const wikilinkUpdateCallbackRef = useRef<
+    ((documentId: number) => void) | null
+  >(null);
+
+  // Network status for offline detection
+  const { isOnline } = useNetworkStatus();
+
+  const documentQuery = useDocument(
+    Number.isFinite(parsedId) ? parsedId : null,
+  );
+  const documentTypeFromQuery = documentQuery.data?.document_type;
+
+  // Collaboration hook - only enable when we have a valid document ID.
+  // The WebSocket opens lazily when something calls `providerFactory`:
+  // Lexical's CollaborationPlugin (inside <Editor>) or the whiteboard
+  // Y.Doc extraction effect. For smart_link docs neither runs — we render
+  // <SmartLinkDocumentViewer> instead — so no WS is ever opened, even
+  // though `enabled` is true while the document type is still loading.
+  // Gating on the fetched type (instead of leaving enabled permissive)
+  // would delay Lexical's CollaborationPlugin initial mount past the
+  // first render where `<Editor>` appears, which regresses the collab
+  // bootstrap and leaves Lexical stuck on "Syncing document…".
+  const collaboration = useCollaboration({
+    documentId: parsedId,
+    enabled:
+      collaborationEnabled &&
+      Number.isFinite(parsedId) &&
+      documentTypeFromQuery !== "smart_link",
+    onError: (error) => {
+      // Show toast and fall back to autosave mode on collaboration error
+      toast.error(t("detail.collaborationFailed"), {
+        description:
+          error.message || t("detail.collaborationFailedDescription"),
+      });
+      setCollaborationEnabled(false);
+    },
+  });
+
+  const commentsQueryParams = { document_id: parsedId };
+  const commentsCache = useCommentsCache(commentsQueryParams);
+  const commentsQuery = useComments(commentsQueryParams, {
+    enabled: Number.isFinite(parsedId),
+  });
+
+  const document = documentQuery.data;
+
+  // Track recently viewed documents so the layout header tabs bar can surface
+  // them. Mirrors the pattern in ProjectDetailPage.
+  const recordViewMutation = useRecordRecentView("document");
+  const viewedDocumentId = documentQuery.data?.id;
+  useEffect(() => {
+    if (!viewedDocumentId) return;
+    recordViewMutation.mutate(viewedDocumentId);
+  }, [viewedDocumentId, recordViewMutation.mutate]);
+
+  const normalizedDocumentContent = useMemo(
+    () =>
+      normalizeEditorState(
+        document?.content as SerializedEditorState | null | undefined,
+      ),
+    [document],
+  );
+
+  // Track which document ID we've loaded the whiteboard scene for, so we
+  // don't re-run the load logic when `document` updates due to a PATCH
+  // response. Without this guard, a successful autosave would reset
+  // whiteboardScene from the PATCH response's content — which can be
+  // behind the user's current edits if they drew during the round-trip.
+  const loadedWhiteboardForRef = useRef<number | null>(null);
+
+  // Clear content state ref when document ID changes
+  // The ref now tracks which document the content belongs to
+  useEffect(() => {
+    contentStateRef.current = null;
+    loadedWhiteboardForRef.current = null;
+    setWhiteboardSceneReady(false);
+    setWhiteboardSceneFromCache(false);
+  }, [parsedId]);
+
+  // Lock body scroll while the editor is in fullscreen so wheel events
+  // over the overlay don't bleed through to the page beneath.
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const body = window.document.body;
+    const previousOverflow = body.style.overflow;
+    body.style.overflow = "hidden";
+    return () => {
+      body.style.overflow = previousOverflow;
+    };
+  }, [isFullscreen]);
+
+  useEffect(() => {
+    if (!document) {
+      return;
+    }
+    setTitle(document.title);
+    if (document.document_type === "whiteboard") {
+      // Only load the whiteboard scene once per document ID. Subsequent
+      // document changes (from PATCH responses, cache updates, etc.) must
+      // not overwrite the live scene state.
+      if (loadedWhiteboardForRef.current === document.id) {
+        // Still sync non-scene fields that the user can change in the
+        // metadata card (featured image, tags are handled separately).
+        setFeaturedImageUrl(document.featured_image_url ?? null);
+        setTags(document.tags ?? []);
+        return;
+      }
+      loadedWhiteboardForRef.current = document.id;
+
+      // Check the write-ahead cache first. On every edit the scene is
+      // written to localStorage synchronously (survives refresh), so if
+      // the user refreshes before the keepalive PATCH lands, we still
+      // have the latest scene. We compare timestamps: if the cached scene
+      // is newer than document.updated_at, use it instead of the (stale)
+      // REST-fetched content.
+      const cacheKey = `wb-scene-${document.id}`;
+      let scene: WhiteboardScene | null = null;
+      let fromCache = false;
+      try {
+        const cached = getItem(cacheKey);
+        if (cached) {
+          const parsed = JSON.parse(cached) as {
+            scene: WhiteboardScene;
+            savedAt: string;
+          };
+          const cachedTs = new Date(parsed.savedAt).getTime();
+          const serverTs = new Date(document.updated_at).getTime();
+          if (cachedTs > serverTs && parsed.scene?.elements) {
+            scene = parsed.scene;
+            fromCache = true;
+          } else {
+            removeItem(cacheKey);
+          }
+        }
+      } catch {
+        removeItem(cacheKey);
+      }
+
+      if (!scene) {
+        const raw = (document.content ?? {}) as Partial<WhiteboardScene>;
+        scene = {
+          elements: raw.elements ?? [],
+          appState: raw.appState ?? {},
+          files: raw.files ?? {},
+        };
+      }
+      setWhiteboardScene(scene);
+      setWhiteboardSceneFromCache(fromCache);
+      setWhiteboardSceneReady(true);
+    } else if (document.document_type === "spreadsheet") {
+      // Spreadsheet content is a sparse cell map dict, not a Lexical
+      // tree — bypass the Lexical normalizer and load the raw snapshot.
+      setContentState(
+        (document.content ?? {}) as unknown as SerializedEditorState,
+      );
+    } else {
+      setContentState(normalizedDocumentContent);
+    }
+    setFeaturedImageUrl(document.featured_image_url ?? null);
+    setTags(document.tags ?? []);
+  }, [document, normalizedDocumentContent]);
+
+  const documentContentJson = useMemo(() => {
+    if (document?.document_type === "whiteboard") {
+      return JSON.stringify(document?.content ?? {});
+    }
+    if (document?.document_type === "spreadsheet") {
+      // Spreadsheet content has no Lexical ``root``, so passing it through
+      // ``normalizeEditorState`` would produce an empty Lexical tree — and
+      // the dirty check would compare that against the actual cell map,
+      // making isDirty=true on first render and firing a spurious
+      // autosave PATCH on every open.
+      return JSON.stringify(document?.content ?? {});
+    }
+    return JSON.stringify(normalizedDocumentContent);
+  }, [document?.document_type, document?.content, normalizedDocumentContent]);
+
+  const currentContentJson = useMemo(() => {
+    if (document?.document_type === "whiteboard") {
+      return JSON.stringify(whiteboardScene);
+    }
+    return JSON.stringify(contentState);
+  }, [document?.document_type, whiteboardScene, contentState]);
+
+  // Unified content payload for save mutations (branches on document type).
+  // Smart-link docs have no editable content here — echo the existing content
+  // back so PATCHes from a title/featured-image change don't try to rewrite
+  // the URL (which would fail backend validation if contentState were empty).
+  const contentForSave = useMemo(
+    () =>
+      document?.document_type === "whiteboard"
+        ? (whiteboardScene as unknown as Record<string, unknown>)
+        : document?.document_type === "smart_link"
+          ? (document.content as unknown as Record<string, unknown>)
+          : (contentState as unknown as Record<string, unknown>),
+    [document?.document_type, document?.content, whiteboardScene, contentState],
+  );
+  const normalizedDocumentFeatured = document?.featured_image_url ?? null;
+  const canEditDocument = useMemo(() => {
+    if (!document || !user) {
+      return false;
+    }
+    const myLevel = document.my_permission_level;
+    return myLevel === "owner" || myLevel === "write";
+  }, [document, user]);
+  const isDirty =
+    canEditDocument &&
+    ((document && title?.trim() !== document?.title?.trim()) ||
+      documentContentJson !== currentContentJson ||
+      normalizedDocumentFeatured !== featuredImageUrl);
+
+  const titleIsDirty = Boolean(
+    canEditDocument && document && title?.trim() !== document?.title?.trim(),
+  );
+
+  const commentsCanModerate = useMemo(() => {
+    if (!document || !user) {
+      return false;
+    }
+    // Pure DAC: users with write or owner permission can moderate comments
+    const myLevel = document.my_permission_level;
+    return myLevel === "owner" || myLevel === "write";
+  }, [document, user]);
+
+  const mentionableUsers = useMemo(() => {
+    return document?.initiative?.members?.map((member) => member.user) ?? [];
+  }, [document?.initiative?.members]);
+
+  // Check if user can create documents in this Initiative
+  const canCreateDocuments = useMemo(() => {
+    if (!document?.initiative || !user) {
+      return false;
+    }
+    // Check if user has create_docs permission via their role
+    const membership = document.initiative.members?.find(
+      (m) => m.user?.id === user.id,
+    );
+    if (!membership) {
+      return false;
+    }
+    // can_create_docs is populated from the Initiative membership role
+    return membership.can_create_docs ?? false;
+  }, [document?.initiative, user]);
+
+  // Wikilink navigation handler
+  const handleWikilinkNavigate = useCallback(
+    (targetDocumentId: number) => {
+      void navigate({
+        to: gp(`/documents/${targetDocumentId}`),
+      });
+    },
+    [navigate, gp],
+  );
+
+  // Wikilink create handler - opens dialog and stores update callback
+  const handleWikilinkCreate = useCallback(
+    (docTitle: string, onCreated: (documentId: number) => void) => {
+      setWikilinkTitle(docTitle);
+      wikilinkUpdateCallbackRef.current = onCreated;
+      setWikilinkDialogOpen(true);
+    },
+    [],
+  );
+
+  // After creating document via wikilink, update the wikilink then navigate
+  const handleWikilinkDocumentCreated = useCallback(
+    (newDocumentId: number) => {
+      // Update the wikilink with the new document ID before navigating
+      if (wikilinkUpdateCallbackRef.current) {
+        wikilinkUpdateCallbackRef.current(newDocumentId);
+        wikilinkUpdateCallbackRef.current = null;
+      }
+      // Capture collaboration state and document ID NOW, before navigation changes them
+      const wasCollaborating = collaboratingRef.current;
+      const sourceDocumentId = parsedId;
+      // Explicitly sync content before navigating to ensure wikilinks are saved
+      // Use setTimeout(0) to allow OnChangePlugin to fire first
+      setTimeout(() => {
+        // Sync directly using captured values (they may have changed by now)
+        const stored = contentStateRef.current;
+        if (
+          wasCollaborating &&
+          token &&
+          activeGuildId &&
+          stored &&
+          stored.documentId === sourceDocumentId
+        ) {
+          const isAbsolute =
+            API_BASE_URL.startsWith("http://") ||
+            API_BASE_URL.startsWith("https://");
+          const baseUrl = isAbsolute
+            ? API_BASE_URL
+            : `${window.location.origin}${API_BASE_URL}`;
+          const syncUrl = `${baseUrl}/collaboration/documents/${sourceDocumentId}/sync-content?token=${encodeURIComponent(token)}&guild_id=${activeGuildId}`;
+          fetch(syncUrl, {
+            method: "POST",
+            body: JSON.stringify(stored.content),
+            headers: { "Content-Type": "application/json" },
+            keepalive: true,
+          }).catch(() => {});
+        }
+        void navigate({
+          to: gp(`/documents/${newDocumentId}`),
+        });
+      }, 0);
+    },
+    [navigate, gp, token, activeGuildId, parsedId],
+  );
+
+  const updateDocumentCommentCount = (delta: number) => {
+    setDocumentCache(parsedId, (previous) => {
+      if (!previous) return previous;
+      const nextCount = Math.max(0, (previous.comment_count ?? 0) + delta);
+      return { ...previous, comment_count: nextCount };
+    });
+  };
+
+  const handleCommentCreated = (comment: CommentRead) => {
+    commentsCache.addComment(comment);
+    updateDocumentCommentCount(1);
+  };
+
+  const handleCommentDeleted = (commentId: number) => {
+    commentsCache.removeComment(commentId);
+    updateDocumentCommentCount(-1);
+  };
+
+  const handleCommentUpdated = (updatedComment: CommentRead) => {
+    commentsCache.updateComment(updatedComment);
+  };
+
+  const saveDocument = useUpdateDocument({
+    // Suppress the default error toast when the save failed because we're offline —
+    // the persistent offline toast already explains the situation to the user.
+    // Using `isOnline` (not `navigator.onLine`) so native WebView users get the
+    // same behavior: the Capacitor Network plugin is authoritative on native.
+    suppressErrorToast: () => !isOnline,
+    onSuccess: () => {
+      if (!isAutosaveRef.current) {
+        toast.success(t("detail.saved"));
+      }
+      // Clear the write-ahead cache — the DB is now up-to-date.
+      removeItem(`wb-scene-${parsedId}`);
+      // Fire-and-initiativet: notify users who were newly mentioned
+      const newMentionIds = findNewMentions(
+        normalizedDocumentContent,
+        contentState,
+      );
+      if (newMentionIds.length > 0) {
+        notifyMentionsApiV1DocumentsDocumentIdMentionsPost(parsedId, {
+          mentioned_user_ids: newMentionIds,
+        }).catch((err) => console.error("Failed to notify mentions:", err));
+      }
+    },
+    onSettled: () => {
+      isAutosaveRef.current = false;
+    },
+  });
+
+  // Handle content change - update both state and ref synchronously
+  // This ensures contentStateRef is always up-to-date for sendBeacon
+  // We track which document the content belongs to, to prevent syncing stale content
+  const handleContentChange = useCallback(
+    (newContent: SerializedEditorState) => {
+      contentStateRef.current = { documentId: parsedId, content: newContent };
+      setContentState(newContent);
+    },
+    [parsedId],
+  );
+
+  useEffect(() => {
+    collaboratingRef.current = collaboration.isCollaborating;
+  }, [collaboration.isCollaborating]);
+
+  // Extract the Yjs doc from the collaboration provider for whiteboards.
+  // Mirrors what Lexical's CollaborationPlugin does internally — we call the
+  // factory to either reuse the cached provider or bootstrap a new one, then
+  // read provider.doc (which is a public field on CollaborationProvider).
+  useEffect(() => {
+    if (document?.document_type !== "whiteboard") {
+      setWhiteboardYDoc(null);
+      setWhiteboardAwareness(null);
+      return;
+    }
+    if (
+      !collaborationEnabled ||
+      !collaboration.providerFactory ||
+      !collaboration.isReady
+    ) {
+      setWhiteboardYDoc(null);
+      setWhiteboardAwareness(null);
+      return;
+    }
+    const yjsDocMap = new Map<string, import("yjs").Doc>();
+    const provider = collaboration.providerFactory("main", yjsDocMap);
+    setWhiteboardYDoc(provider.doc);
+    setWhiteboardAwareness(provider.awareness);
+    // No cleanup — useCollaboration owns the provider lifecycle.
+  }, [
+    document?.document_type,
+    collaborationEnabled,
+    collaboration.providerFactory,
+    collaboration.isReady,
+  ]);
+
+  // Same pattern for spreadsheets — separate state so we don't conflate
+  // doc-type-specific bookkeeping. The provider is cached by document
+  // ID, so calling providerFactory here returns the same instance the
+  // whiteboard branch would (when it applied). Doc-types are mutually
+  // exclusive at any given time anyway.
+  useEffect(() => {
+    if (document?.document_type !== "spreadsheet") {
+      setSpreadsheetYDoc(null);
+      setSpreadsheetAwareness(null);
+      return;
+    }
+    if (
+      !collaborationEnabled ||
+      !collaboration.providerFactory ||
+      !collaboration.isReady
+    ) {
+      setSpreadsheetYDoc(null);
+      setSpreadsheetAwareness(null);
+      return;
+    }
+    const yjsDocMap = new Map<string, import("yjs").Doc>();
+    const provider = collaboration.providerFactory("main", yjsDocMap);
+    setSpreadsheetYDoc(provider.doc);
+    setSpreadsheetAwareness(provider.awareness);
+  }, [
+    document?.document_type,
+    collaborationEnabled,
+    collaboration.providerFactory,
+    collaboration.isReady,
+  ]);
+
+  // Whiteboard scene change handler — mirrors handleContentChange for Lexical.
+  // Also writes a write-ahead cache to localStorage so the scene survives
+  // a page refresh even if the keepalive PATCH hasn't landed yet.
+  const handleWhiteboardChange = useCallback(
+    (scene: WhiteboardScene) => {
+      contentStateRef.current = {
+        documentId: parsedId,
+        content: scene as unknown as SerializedEditorState,
+      };
+      setWhiteboardScene(scene);
+      try {
+        setItem(
+          `wb-scene-${parsedId}`,
+          JSON.stringify({ scene, savedAt: new Date().toISOString() }),
+        );
+      } catch {
+        // Storage full or unavailable — best-effort
+      }
+    },
+    [parsedId],
+  );
+
+  // Autosave with debounce
+  useEffect(() => {
+    if (!autosaveEnabled || !canEditDocument || saveDocument.isPending) {
+      return;
+    }
+    // Skip all REST saves while offline — edits remain in local state and will
+    // be flushed when the network returns (see reconnect effect below).
+    if (!isOnline) {
+      return;
+    }
+    // When collaborating, sync content periodically to keep the content
+    // column updated for non-collab readers. Native Lexical docs use 10s
+    // (users type many characters per second, a shorter window would
+    // hammer the backend). Whiteboards use the same 2s debounce as
+    // non-collab mode — a single drawing action fits in 10s, so a longer
+    // window leaves document.content stale for external REST readers
+    // and increases the yjs_state/content desync window.
+    if (collaboration.isCollaborating) {
+      const collabDebounceMs =
+        document?.document_type === "whiteboard" ? 2000 : 10000;
+      const timer = setTimeout(() => {
+        isAutosaveRef.current = true;
+        saveDocument.mutate({
+          documentId: parsedId,
+          data: {
+            title: title?.trim(),
+            content: contentForSave,
+            featured_image_url: featuredImageUrl,
+          },
+        });
+      }, collabDebounceMs);
+      return () => clearTimeout(timer);
+    } else {
+      if (!isDirty) {
+        return;
+      }
+      const timer = setTimeout(() => {
+        isAutosaveRef.current = true;
+        saveDocument.mutate({
+          documentId: parsedId,
+          data: {
+            title: title?.trim(),
+            content: contentForSave,
+            featured_image_url: featuredImageUrl,
+          },
+        });
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [
+    autosaveEnabled,
+    isDirty,
+    canEditDocument,
+    saveDocument,
+    parsedId,
+    title,
+    contentForSave,
+    featuredImageUrl,
+    collaboration.isCollaborating,
+    isOnline,
+    document?.document_type,
+  ]);
+
+  // When connectivity returns after being offline, flush any pending dirty
+  // changes immediately. This handles the case where the user stopped typing
+  // while offline (so the 2s debounce already cleared) and is necessary
+  // because the autosave effect only fires on new edits.
+  const prevOnlineRef = useRef(isOnline);
+  useEffect(() => {
+    const wasOffline = !prevOnlineRef.current;
+    prevOnlineRef.current = isOnline;
+    if (!wasOffline || !isOnline) return;
+    if (!canEditDocument || !isDirty || saveDocument.isPending) return;
+    // Do NOT set isAutosaveRef here — we want the success toast to fire so
+    // users who edited while offline get explicit confirmation their work
+    // was persisted after reconnecting.
+    saveDocument.mutate({
+      documentId: parsedId,
+      data: {
+        title: title?.trim(),
+        content: contentForSave,
+        featured_image_url: featuredImageUrl,
+      },
+    });
+  }, [
+    isOnline,
+    canEditDocument,
+    isDirty,
+    saveDocument,
+    parsedId,
+    title,
+    contentForSave,
+    featuredImageUrl,
+  ]);
+
+  // ── Unmount / unload flush ──────────────────────────────────────────
+  // Mirrors the current save payload into a ref so the unmount flush has
+  // the most recent data even if the autosave debounce was cancelled
+  // mid-flight (e.g. user draws a shape and refreshes within 2 seconds).
+  // Without this, the autosave timer is cleared on unmount and the edit
+  // is lost. Especially important for whiteboards where a single drawing
+  // action comfortably fits inside the debounce window.
+  const pendingSavePayloadRef = useRef<{
+    documentId: number;
+    data: {
+      title?: string;
+      content: Record<string, unknown>;
+      featured_image_url: string | null;
+    };
+  } | null>(null);
+  useEffect(() => {
+    if (!canEditDocument || !isDirty) {
+      pendingSavePayloadRef.current = null;
+      return;
+    }
+    pendingSavePayloadRef.current = {
+      documentId: parsedId,
+      data: {
+        title: title?.trim(),
+        content: contentForSave,
+        featured_image_url: featuredImageUrl,
+      },
+    };
+  }, [
+    canEditDocument,
+    isDirty,
+    parsedId,
+    title,
+    contentForSave,
+    featuredImageUrl,
+  ]);
+
+  // Hold token and activeGuildId in refs so the flush closure always sees
+  // the latest values without the effect needing to re-run on JWT rotation.
+  // Without this, a token refresh would trigger the cleanup → flush() →
+  // null the pending ref, and the ref-populating effect wouldn't re-run
+  // (its deps didn't change), silently dropping the next pending save.
+  const tokenRef = useRef(token);
+  const activeGuildIdRef = useRef(activeGuildId);
+  useEffect(() => {
+    tokenRef.current = token;
+  }, [token]);
+  useEffect(() => {
+    activeGuildIdRef.current = activeGuildId;
+  }, [activeGuildId]);
+
+  useEffect(() => {
+    const flush = () => {
+      const pending = pendingSavePayloadRef.current;
+      if (!pending || !tokenRef.current || !activeGuildIdRef.current) return;
+      const isAbsolute =
+        API_BASE_URL.startsWith("http://") ||
+        API_BASE_URL.startsWith("https://");
+      const baseUrl = isAbsolute
+        ? API_BASE_URL
+        : `${window.location.origin}${API_BASE_URL}`;
+      const url = `${baseUrl}/documents/${pending.documentId}`;
+      fetch(url, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${tokenRef.current}`,
+          "X-Guild-ID": String(activeGuildIdRef.current),
+        },
+        body: JSON.stringify(pending.data),
+        keepalive: true,
+      }).catch(() => {});
+      pendingSavePayloadRef.current = null;
+    };
+
+    const handleBeforeUnload = () => flush();
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      flush();
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, []);
+
+  // Persistent offline toast with mode-aware copy
+  useEffect(() => {
+    const TOAST_ID = "editor-offline";
+    if (isOnline) {
+      toast.dismiss(TOAST_ID);
+      return;
+    }
+    const message = collaboration.isCollaborating
+      ? t("detail.offline.collaborative")
+      : t("detail.offline.nonCollaborative");
+    toast.warning(message, { id: TOAST_ID, duration: Infinity });
+    return () => {
+      toast.dismiss(TOAST_ID);
+    };
+  }, [isOnline, collaboration.isCollaborating, t]);
+
+  // Ctrl+S / Cmd+S manual save shortcut
+  useEffect(() => {
+    if (!canEditDocument) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "s" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        if (!saveDocument.isPending) {
+          saveDocument.mutate({
+            documentId: parsedId,
+            data: {
+              title: title?.trim(),
+              content: contentForSave,
+              featured_image_url: featuredImageUrl,
+            },
+          });
+        }
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [
+    canEditDocument,
+    saveDocument,
+    parsedId,
+    title,
+    contentForSave,
+    featuredImageUrl,
+  ]);
+
+  // Sync content via sendBeacon on page unload to ensure content column stays updated
+  // This is critical when users navigate away or close the tab during collaboration
+  useEffect(() => {
+    if (!canEditDocument || !token || !activeGuildId) {
+      syncContentBeaconRef.current = null;
+      return;
+    }
+
+    const syncContentBeacon = () => {
+      // Only sync if we were collaborating (content might have changed via Yjs)
+      if (!collaboratingRef.current) {
+        return;
+      }
+
+      // Only sync if we have content for THIS document (prevents syncing stale content)
+      const stored = contentStateRef.current;
+      if (!stored || stored.documentId !== parsedId) {
+        return;
+      }
+
+      // Build the sync URL
+      const isAbsolute =
+        API_BASE_URL.startsWith("http://") ||
+        API_BASE_URL.startsWith("https://");
+      const baseUrl = isAbsolute
+        ? API_BASE_URL
+        : `${window.location.origin}${API_BASE_URL}`;
+      const syncUrl = `${baseUrl}/collaboration/documents/${parsedId}/sync-content?token=${encodeURIComponent(token)}&guild_id=${activeGuildId}`;
+
+      // Send content via fetch with keepalive (more reliable than sendBeacon, less likely to be blocked)
+      fetch(syncUrl, {
+        method: "POST",
+        body: JSON.stringify(stored.content),
+        headers: { "Content-Type": "application/json" },
+        keepalive: true, // Ensures request completes even if page unloads
+      }).catch(() => {}); // Silently ignore errors on page unload
+    };
+
+    // Store ref so it can be called from other handlers
+    syncContentBeaconRef.current = syncContentBeacon;
+
+    // Handle tab close / navigation
+    const handleBeforeUnload = () => {
+      syncContentBeacon();
+    };
+
+    // Handle tab visibility change (switching tabs)
+    const handleVisibilityChange = () => {
+      if (globalThis.document.visibilityState === "hidden") {
+        syncContentBeacon();
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    globalThis.document.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange,
+    );
+
+    return () => {
+      // Sync content when navigating away (component unmount or document change)
+      syncContentBeacon();
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      globalThis.document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange,
+      );
+    };
+  }, [parsedId, token, activeGuildId, canEditDocument]);
+
+  const handleFeaturedImageChange = async (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    if (!canEditDocument) {
+      return;
+    }
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      toast.error(t("detail.imageFileRequired"));
+      return;
+    }
+    setIsUploadingFeaturedImage(true);
+    try {
+      const response = await uploadAttachment(file);
+      setFeaturedImageUrl(response.url);
+      isAutosaveRef.current = true;
+      saveDocument.mutate({
+        documentId: parsedId,
+        data: {
+          title: title?.trim(),
+          content: contentForSave,
+          featured_image_url: response.url,
+        },
+      });
+      toast.success(t("detail.imageUploaded"));
+    } catch (error) {
+      console.error(error);
+      toast.error(t("detail.imageUploadError"));
+    } finally {
+      setIsUploadingFeaturedImage(false);
+    }
+  };
+
+  const openFeaturedImagePicker = () => {
+    if (!canEditDocument) {
+      return;
+    }
+    featuredImageInputRef.current?.click();
+  };
+
+  const handleTagsChange = useCallback(
+    (newTags: TagSummary[]) => {
+      setTags(newTags);
+      // Immediately save tag changes to the server
+      setDocumentTagsMutation.mutate({
+        documentId: parsedId,
+        tagIds: newTags.map((tg) => tg.id),
+      });
+    },
+    [parsedId, setDocumentTagsMutation],
+  );
+
+  // Combine server-attached properties with locally-added stubs (definitions
+  // the user just picked but hasn't given a value yet). Drop any pending
+  // entries that the server has since returned as attached.
+  const serverProperties = useMemo<PropertySummary[]>(
+    () => document?.properties ?? [],
+    [document],
+  );
+  const serverPropertyIds = useMemo(
+    () => new Set(serverProperties.map((p) => p.property_id)),
+    [serverProperties],
+  );
+  const combinedProperties = useMemo<PropertySummary[]>(() => {
+    const stubs: PropertySummary[] = pendingProperties
+      .filter((def) => !serverPropertyIds.has(def.id))
+      .map((def) => ({
+        property_id: def.id,
+        name: def.name,
+        type: def.type,
+        options: def.options ?? null,
+        value: null,
+      }));
+    return [...serverProperties, ...stubs];
+  }, [serverProperties, pendingProperties, serverPropertyIds]);
+  const combinedPropertyIds = useMemo(
+    () => combinedProperties.map((p) => p.property_id),
+    [combinedProperties],
+  );
+
+  useEffect(() => {
+    if (pendingProperties.length === 0) return;
+    setPendingProperties((prev) =>
+      prev.filter((def) => !serverPropertyIds.has(def.id)),
+    );
+  }, [serverPropertyIds, pendingProperties.length]);
+
+  const handleAddProperty = useCallback(
+    (definition: PropertyDefinitionRead) => {
+      setPendingProperties((prev) =>
+        prev.some((def) => def.id === definition.id)
+          ? prev
+          : [...prev, definition],
+      );
+      // Persist the attached-but-empty row immediately so the property
+      // survives a refresh before the user enters a value. We reuse the
+      // replace-all PUT shape: include every currently-attached property
+      // plus the newly-added one with value=null.
+      if (!Number.isFinite(parsedId) || serverPropertyIds.has(definition.id))
+        return;
+      const values = [
+        ...serverProperties.map((p) => ({
+          property_id: p.property_id,
+          value:
+            p.type === "user_reference" &&
+            p.value &&
+            typeof p.value === "object" &&
+            "id" in p.value
+              ? (p.value as { id: number }).id
+              : (p.value ?? null),
+        })),
+        { property_id: definition.id, value: null },
+      ];
+      setDocumentPropertiesMutation.mutate({
+        documentId: parsedId,
+        values: { values },
+      });
+    },
+    [
+      parsedId,
+      serverProperties,
+      serverPropertyIds,
+      setDocumentPropertiesMutation,
+    ],
+  );
+
+  if (!Number.isFinite(parsedId)) {
+    return <p className="text-destructive">{t("detail.invalidId")}</p>;
+  }
+
+  if (documentQuery.isLoading) {
+    return (
+      <div className="flex items-center gap-2 text-muted-foreground text-sm">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        {t("detail.loading")}
+      </div>
+    );
+  }
+
+  if (documentQuery.isError || !document) {
+    const status = getHttpStatus(documentQuery.error);
+    const backTo = gp("/documents");
+    const backLabel = t("detail.backToDocuments");
+
+    if (status === 403) {
+      return (
+        <StatusMessage
+          icon={<ShieldAlert />}
+          title={t("detail.noAccess")}
+          description={t("detail.noAccessDescription")}
+          backTo={backTo}
+          backLabel={backLabel}
+        />
+      );
+    }
+    return (
+      <StatusMessage
+        icon={<SearchX />}
+        title={t("detail.notFound")}
+        description={t("detail.notFoundDescription")}
+        backTo={backTo}
+        backLabel={backLabel}
+      />
+    );
+  }
+
+  const attachedProjects: DocumentProjectLink[] = document.projects ?? [];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Breadcrumb>
+          <BreadcrumbList>
+            {document.initiative && (
+              <>
+                <BreadcrumbItem>
+                  <BreadcrumbLink asChild>
+                    <Link to={gp(`/initiatives/${document.initiative.id}`)}>
+                      {document.initiative.name}
+                    </Link>
+                  </BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator />
+              </>
+            )}
+            <BreadcrumbItem>
+              <BreadcrumbPage>{document.title}</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+        <div className="flex items-center gap-2">
+          {canEditDocument && (
+            <Button asChild variant="outline" size="sm">
+              <Link
+                to={gp(`/documents/${document.id}/settings`)}
+                className="inline-flex items-center gap-2"
+              >
+                <Settings className="h-4 w-4" />
+                {t("detail.settings")}
+              </Link>
+            </Button>
+          )}
+          <Button
+            variant={sidePanel.isOpen ? "secondary" : "outline"}
+            size="sm"
+            onClick={sidePanel.toggle}
+            title={
+              sidePanel.isOpen ? t("detail.closePanel") : t("detail.openPanel")
+            }
+          >
+            <PanelRight className="h-4 w-4" />
+            <span className="sr-only">{t("detail.togglePanel")}</span>
+          </Button>
+        </div>
+      </div>
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <Input
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            placeholder={t("detail.titlePlaceholder")}
+            className="font-semibold text-2xl"
+            disabled={!canEditDocument}
+          />
+          {titleIsDirty ? (
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                if (saveDocument.isPending) return;
+                saveDocument.mutate({
+                  documentId: parsedId,
+                  data: {
+                    title: title?.trim(),
+                    content: contentForSave,
+                    featured_image_url: featuredImageUrl,
+                  },
+                });
+              }}
+              disabled={saveDocument.isPending}
+              className="shrink-0"
+            >
+              {saveDocument.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              {t("common:save")}
+            </Button>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-muted-foreground text-sm">
+          {document.initiative ? (
+            <Link
+              to={gp(`/initiatives/${document.initiative.id}`)}
+              className="inline-flex items-center gap-1 rounded-full border px-3 py-1"
+            >
+              <InitiativeColorDot color={document.initiative.color} />
+              {document.initiative.name}
+            </Link>
+          ) : null}
+          <span>
+            {t("detail.updated", {
+              date: formatDistanceToNow(new Date(document.updated_at), {
+                addSuffix: true,
+                locale: dateLocale,
+              }),
+            })}
+          </span>
+          {document.is_template ? (
+            <Badge variant="outline">{t("detail.template")}</Badge>
+          ) : null}
+        </div>
+      </div>
+      <DocumentDetailKnowledgeRoom
+        title={title || document.title}
+        documentType={document.document_type}
+        projectCount={attachedProjects.length}
+        commentCount={document.comment_count ?? commentsQuery.data?.length ?? 0}
+        canEdit={canEditDocument}
+        isDirty={Boolean(isDirty)}
+        isAIEnabled={isAIEnabled}
+        onOpenPanel={() => sidePanel.setIsOpen(true)}
+        onSummarize={() => sidePanel.setIsOpen(true)}
+        onAskCommand={() =>
+          getOpenAICommandCenter()?.(
+            `Bu dokümanı kaynak alarak özetle, kararları ve aksiyon maddelerini çıkar: ${title || document.title}`,
+          )
+        }
+      />
+      <div className="space-y-6">
+        <Card>
+          <Collapsible
+            open={!isMetadataCollapsed}
+            onOpenChange={(open) => {
+              const collapsed = !open;
+              setIsMetadataCollapsed(collapsed);
+              setItem(metadataCollapsedStorageKey, collapsed.toString());
+            }}
+          >
+            <CardHeader>
+              <div className="inline-flex items-center gap-2">
+                <CardTitle>{t("detail.metadataTitle")}</CardTitle>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 rounded-full"
+                  onClick={() => {
+                    setIsMetadataCollapsed((prev) => {
+                      const next = !prev;
+                      setItem(metadataCollapsedStorageKey, next.toString());
+                      return next;
+                    });
+                  }}
+                  aria-label={
+                    isMetadataCollapsed
+                      ? t("detail.expandMetadata")
+                      : t("detail.collapseMetadata")
+                  }
+                >
+                  {isMetadataCollapsed ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronUp className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            </CardHeader>
+            <CollapsibleContent className="data-[state=closed]:hidden">
+              <CardContent className="space-y-6">
+                {/* Featured image — hidden for image documents (the image IS the featured image) */}
+                {!(
+                  document.document_type === "file" &&
+                  document.file_content_type?.startsWith("image/")
+                ) && (
+                  <div className="space-y-2">
+                    <Label>{t("detail.featuredImage")}</Label>
+                    <div className="flex flex-col gap-4 md:flex-row md:items-center">
+                      <div className="relative aspect-square w-full overflow-hidden rounded-xl border bg-muted md:w-50">
+                        {featuredImageUrl ? (
+                          <img
+                            src={
+                              resolveUploadUrl(featuredImageUrl) ?? undefined
+                            }
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-muted-foreground">
+                            <ScrollText className="h-10 w-10" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <input
+                          ref={featuredImageInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleFeaturedImageChange}
+                        />
+                        {canEditDocument ? (
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={openFeaturedImagePicker}
+                              disabled={isUploadingFeaturedImage}
+                            >
+                              {isUploadingFeaturedImage ? (
+                                <>
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  {t("detail.uploading")}
+                                </>
+                              ) : (
+                                <>
+                                  <ImagePlus className="mr-2 h-4 w-4" />
+                                  {t("detail.uploadImage")}
+                                </>
+                              )}
+                            </Button>
+                            {featuredImageUrl ? (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                onClick={() => {
+                                  setFeaturedImageUrl(null);
+                                  isAutosaveRef.current = true;
+                                  saveDocument.mutate({
+                                    documentId: parsedId,
+                                    data: {
+                                      title: title?.trim(),
+                                      content: contentForSave,
+                                      featured_image_url: null,
+                                    },
+                                  });
+                                }}
+                                disabled={isUploadingFeaturedImage}
+                              >
+                                <X className="mr-2 h-4 w-4" />
+                                {t("detail.removeImage")}
+                              </Button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                        <p className="text-muted-foreground text-xs">
+                          {t("detail.uploadHelpText")}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tags */}
+                <div className="space-y-2">
+                  <Label>{t("detail.tagsLabel")}</Label>
+                  <TagPicker
+                    selectedTags={tags}
+                    onChange={handleTagsChange}
+                    disabled={!canEditDocument}
+                    placeholder={t("detail.tagsPlaceholder")}
+                  />
+                </div>
+
+                {/* Properties */}
+                <div className="space-y-2">
+                  <Label>{t("properties:title")}</Label>
+                  <PropertyList
+                    entityKind="document"
+                    entityId={parsedId}
+                    properties={combinedProperties}
+                    disabled={!canEditDocument}
+                  />
+                  <AddPropertyButton
+                    initiativeId={document.initiative_id}
+                    currentPropertyIds={combinedPropertyIds}
+                    onAdd={handleAddProperty}
+                    disabled={!canEditDocument}
+                  />
+                </div>
+              </CardContent>
+            </CollapsibleContent>
+          </Collapsible>
+        </Card>
+
+        {/* File document viewer */}
+        {document.document_type === "file" && document.file_url ? (
+          <Suspense
+            fallback={
+              <div className="flex h-96 items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            }
+          >
+            <FileDocumentViewer
+              documentId={document.id}
+              fileUrl={document.file_url}
+              contentType={document.file_content_type}
+              originalFilename={document.original_filename}
+              fileSize={document.file_size}
+              canEdit={canEditDocument}
+              isOwner={document.my_permission_level === "owner"}
+            />
+          </Suspense>
+        ) : (
+          <div
+            className={cn(
+              isFullscreen &&
+                "fixed inset-0 z-50 m-0! flex flex-col gap-4 overflow-hidden bg-background p-4",
+            )}
+          >
+            {/* Collaboration status - shown between featured image and editor.
+                Also shown when offline even in non-collaborative mode, so the
+                user sees an explicit offline indicator at the top of the editor. */}
+            <div className="flex items-center gap-2">
+              {(collaborationEnabled || !isOnline) && (
+                <CollaborationStatusBadge
+                  connectionStatus={collaboration.connectionStatus}
+                  collaborators={collaboration.collaborators}
+                  isCollaborating={collaboration.isCollaborating}
+                  isSynced={collaboration.isSynced}
+                  isOnline={isOnline}
+                />
+              )}
+              {document.document_type === "smart_link" &&
+              typeof (document.content as { url?: unknown } | null)?.url ===
+                "string" ? (
+                <Button
+                  asChild
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto"
+                >
+                  <a
+                    href={(document.content as { url: string }).url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    {t("smartLink.openInNewTab")}
+                  </a>
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsFullscreen((value) => !value)}
+                aria-label={t(
+                  isFullscreen
+                    ? "detail.exitFullscreen"
+                    : "detail.enterFullscreen",
+                )}
+                className={cn(
+                  document.document_type !== "smart_link" && "ml-auto",
+                )}
+              >
+                {isFullscreen ? (
+                  <Minimize2 className="mr-2 h-4 w-4" />
+                ) : (
+                  <Maximize2 className="mr-2 h-4 w-4" />
+                )}
+                {t(
+                  isFullscreen
+                    ? "detail.exitFullscreen"
+                    : "detail.enterFullscreen",
+                )}
+              </Button>
+            </div>
+            {/*
+              Key is just document.id - we don't remount when entering collaborative mode.
+              The CollaborationPlugin handles syncing the existing content to Yjs.
+            */}
+            <Suspense
+              fallback={
+                <div className="flex h-96 items-center justify-center rounded-xl border">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              }
+            >
+              {document.document_type === "whiteboard" ? (
+                whiteboardSceneReady ? (
+                  <WhiteboardDocumentEditor
+                    key={parsedId}
+                    initialScene={whiteboardScene}
+                    initialSceneFromCache={whiteboardSceneFromCache}
+                    onSerializedChange={handleWhiteboardChange}
+                    readOnly={!canEditDocument}
+                    yDoc={
+                      collaborationEnabled && collaboration.isReady
+                        ? whiteboardYDoc
+                        : null
+                    }
+                    isSynced={collaboration.isSynced}
+                    hasOtherCollaborators={
+                      collaboration.collaborators.length > 0
+                    }
+                    awareness={
+                      collaborationEnabled && collaboration.isReady
+                        ? whiteboardAwareness
+                        : null
+                    }
+                    currentUser={
+                      user
+                        ? {
+                            id: user.id,
+                            name: user.full_name || user.email || "Anonymous",
+                          }
+                        : null
+                    }
+                    className={cn(isFullscreen && "h-full min-h-0 flex-1")}
+                  />
+                ) : (
+                  <div className="flex h-96 items-center justify-center rounded-xl border">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </div>
+                )
+              ) : document.document_type === "smart_link" ? (
+                <SmartLinkDocumentViewer
+                  key={parsedId}
+                  content={
+                    document.content as unknown as SmartLinkContent | null
+                  }
+                  className={cn(isFullscreen && "h-full min-h-0 flex-1")}
+                />
+              ) : document.document_type === "spreadsheet" ? (
+                <SpreadsheetDocumentEditor
+                  key={parsedId}
+                  initialContent={
+                    (document.content ?? {}) as unknown as SpreadsheetContent
+                  }
+                  onContentChange={(content) =>
+                    handleContentChange(
+                      content as unknown as SerializedEditorState,
+                    )
+                  }
+                  documentTitle={title || document.title}
+                  readOnly={!canEditDocument}
+                  yDoc={
+                    collaborationEnabled && collaboration.isReady
+                      ? spreadsheetYDoc
+                      : null
+                  }
+                  awareness={
+                    collaborationEnabled && collaboration.isReady
+                      ? spreadsheetAwareness
+                      : null
+                  }
+                  currentUser={spreadsheetCurrentUser}
+                  className={cn(
+                    "max-h-[70vh]",
+                    isFullscreen && "h-full max-h-none min-h-0 flex-1",
+                  )}
+                />
+              ) : (
+                <Editor
+                  key={parsedId}
+                  editorSerializedState={normalizedDocumentContent}
+                  onSerializedChange={handleContentChange}
+                  readOnly={!canEditDocument}
+                  showToolbar={canEditDocument}
+                  className={cn(
+                    "max-h-[80vh]",
+                    isFullscreen && "h-full max-h-none min-h-0 flex-1",
+                  )}
+                  mentionableUsers={mentionableUsers}
+                  documentName={title}
+                  collaborative={collaborationEnabled && collaboration.isReady}
+                  providerFactory={collaboration.providerFactory}
+                  // Always track changes so contentState stays updated for periodic saves
+                  trackChanges={true}
+                  isSynced={collaboration.isSynced}
+                  // Wikilinks support
+                  initiativeId={document.initiative_id}
+                  onWikilinkNavigate={handleWikilinkNavigate}
+                  onWikilinkCreate={handleWikilinkCreate}
+                />
+              )}
+            </Suspense>
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Smart-link docs have nothing editable on this page — suppress
+                  the save/autosave bar entirely. */}
+              {document.document_type ===
+              "smart_link" ? null : canEditDocument ? (
+                <>
+                  {/* When collaboration is active, changes sync in real-time */}
+                  {collaboration.isCollaborating ? (
+                    <span className="text-muted-foreground text-sm">
+                      {t("detail.collaborationDescription")}
+                    </span>
+                  ) : (
+                    <>
+                      <Button
+                        type="button"
+                        onClick={() =>
+                          saveDocument.mutate({
+                            documentId: parsedId,
+                            data: {
+                              title: title?.trim(),
+                              content: contentForSave,
+                              featured_image_url: featuredImageUrl,
+                            },
+                          })
+                        }
+                        disabled={!isDirty || saveDocument.isPending}
+                      >
+                        {saveDocument.isPending ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            {t("detail.saving")}
+                          </>
+                        ) : (
+                          t("detail.saveChanges")
+                        )}
+                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="autosave"
+                          checked={autosaveEnabled}
+                          onCheckedChange={(checked) =>
+                            setAutosaveEnabled(checked === true)
+                          }
+                        />
+                        <Label
+                          htmlFor="autosave"
+                          className="cursor-pointer text-sm"
+                        >
+                          {t("detail.autosave")}
+                        </Label>
+                      </div>
+                      {!isDirty ? (
+                        <span className="self-center text-muted-foreground text-sm">
+                          {t("detail.allChangesSaved")}
+                        </span>
+                      ) : null}
+                    </>
+                  )}
+                  {/* Always show collaboration toggle */}
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="collaboration"
+                      checked={collaborationEnabled}
+                      onCheckedChange={(checked) =>
+                        setCollaborationEnabled(checked === true)
+                      }
+                    />
+                    <Label
+                      htmlFor="collaboration"
+                      className="cursor-pointer text-sm"
+                    >
+                      {t("detail.liveCollaboration")}
+                    </Label>
+                  </div>
+                </>
+              ) : (
+                <p className="text-muted-foreground text-sm">
+                  {t("detail.readOnly")}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("detail.attachedProjects")}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {attachedProjects.length === 0 ? (
+              <p className="text-muted-foreground text-sm">
+                {t("detail.noAttachedProjects")}
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {attachedProjects.map((link) => (
+                  <div
+                    key={`${document.id}-${link.project_id}`}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-4 py-3"
+                  >
+                    <div className="space-y-0.5">
+                      <Link
+                        to={gp(`/projects/${link.project_id}`)}
+                        className="font-medium hover:underline"
+                      >
+                        {link.project_name ??
+                          t("detail.projectFallback", { id: link.project_id })}
+                      </Link>
+                      <p className="text-muted-foreground text-xs">
+                        {t("detail.attached", {
+                          date: formatDistanceToNow(
+                            new Date(link.attached_at),
+                            {
+                              addSuffix: true,
+                              locale: dateLocale,
+                            },
+                          ),
+                        })}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Backlinks - documents that link to this one */}
+        <DocumentBacklinks documentId={parsedId} />
+      </div>
+
+      {/* Side panel for AI summary and comments */}
+      <DocumentSidePanel
+        isOpen={sidePanel.isOpen}
+        onOpenChange={sidePanel.setIsOpen}
+        showSummaryTab={document.document_type === "native" && isAIEnabled}
+        summaryContent={
+          <DocumentSummary
+            documentId={parsedId}
+            summary={aiSummary}
+            onSummaryChange={setAiSummary}
+          />
+        }
+        commentsContent={
+          <>
+            {commentsQuery.isError && (
+              <p className="mb-4 text-destructive text-sm">
+                {t("detail.commentsLoadError")}
+              </p>
+            )}
+            <CommentSection
+              entityType="document"
+              entityId={parsedId}
+              comments={commentsQuery.data ?? []}
+              isLoading={commentsQuery.isLoading}
+              onCommentCreated={handleCommentCreated}
+              onCommentDeleted={handleCommentDeleted}
+              onCommentUpdated={handleCommentUpdated}
+              canModerate={commentsCanModerate}
+              initiativeId={document.initiative_id}
+            />
+          </>
+        }
+      />
+
+      {/* Wikilink create document dialog */}
+      <CreateWikilinkDocumentDialog
+        open={wikilinkDialogOpen}
+        onOpenChange={setWikilinkDialogOpen}
+        title={wikilinkTitle}
+        initiativeId={document.initiative_id}
+        canCreate={canCreateDocuments}
+        onCreated={handleWikilinkDocumentCreated}
+      />
+    </div>
+  );
+};

@@ -1,0 +1,383 @@
+import { useRouter, useSearch } from "@tanstack/react-router";
+import { Loader2, Plus } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+
+import { CreateQueueDialog } from "@/components/initiativeTools/queues/CreateQueueDialog";
+import { QueueCard } from "@/components/initiativeTools/queues/QueueCard";
+import {
+  QueuesFilterBar,
+  type StatusFilter,
+} from "@/components/initiativeTools/queues/QueuesFilterBar";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { useAuth } from "@/hooks/useAuth";
+import { useGuilds } from "@/hooks/useGuilds";
+import {
+  canCreate as canCreatePermission,
+  useMyInitiativePermissions,
+} from "@/hooks/useInitiativeRoles";
+import { useInitiatives } from "@/hooks/useInitiatives";
+import { useQueuesList } from "@/hooks/useQueues";
+import { useGuildPath } from "@/lib/guildUrl";
+
+const initiative_FILTER_ALL = "all";
+
+type QueuesViewProps = {
+  fixedinitiativeId?: number;
+  canCreate?: boolean;
+};
+
+export const QueuesView = ({ fixedinitiativeId, canCreate }: QueuesViewProps) => {
+  const { t } = useTranslation(["queues", "common"]);
+  const router = useRouter();
+  const { user } = useAuth();
+  const { activeGuildId } = useGuilds();
+  const gp = useGuildPath();
+  const searchParams = useSearch({ strict: false }) as {
+    initiativeId?: string;
+    create?: string;
+    page?: number;
+  };
+
+  const lockedinitiativeId = typeof fixedinitiativeId === "number" ? fixedinitiativeId : null;
+
+  const [initiativeFilter, setinitiativeFilter] = useState<string>(
+    lockedinitiativeId ? String(lockedinitiativeId) : initiative_FILTER_ALL,
+  );
+
+  const filteredinitiativeId =
+    initiativeFilter !== initiative_FILTER_ALL ? Number(initiativeFilter) : null;
+
+  const { data: filteredinitiativePermissions } = useMyInitiativePermissions(
+    !lockedinitiativeId && filteredinitiativeId ? filteredinitiativeId : null,
+  );
+
+  const searchParamsRef = useRef(searchParams);
+  searchParamsRef.current = searchParams;
+  const lastConsumedParams = useRef<string>("");
+  const prevGuildIdRef = useRef<number | null>(activeGuildId);
+  const isClosingCreateDialog = useRef(false);
+
+  // Consume ?initiativeId from URL once
+  useEffect(() => {
+    const urlinitiativeId = searchParams.initiativeId;
+    const paramKey = urlinitiativeId || "";
+
+    if (
+      urlinitiativeId &&
+      !lockedinitiativeId &&
+      paramKey !== lastConsumedParams.current
+    ) {
+      lastConsumedParams.current = paramKey;
+      setinitiativeFilter(urlinitiativeId);
+    }
+  }, [searchParams, lockedinitiativeId]);
+
+  const [page, setPageState] = useState(() => searchParams.page ?? 1);
+
+  const setPage = useCallback(
+    (updater: number | ((prev: number) => number)) => {
+      setPageState((prev) => {
+        const next = typeof updater === "function" ? updater(prev) : updater;
+        void router.navigate({
+          to: ".",
+          search: {
+            ...searchParamsRef.current,
+            page: next <= 1 ? undefined : next,
+          },
+          replace: true,
+        });
+        return next;
+      });
+    },
+    [router],
+  );
+
+  useEffect(() => {
+    if (lockedinitiativeId) {
+      const lockedValue = String(lockedinitiativeId);
+      setinitiativeFilter((prev) => (prev === lockedValue ? prev : lockedValue));
+    }
+  }, [lockedinitiativeId]);
+
+  // Reset Initiative filter when guild changes
+  useEffect(() => {
+    const prevGuildId = prevGuildIdRef.current;
+    prevGuildIdRef.current = activeGuildId;
+    if (
+      prevGuildId !== null &&
+      prevGuildId !== activeGuildId &&
+      !lockedinitiativeId
+    ) {
+      setinitiativeFilter(initiative_FILTER_ALL);
+      lastConsumedParams.current = "";
+    }
+  }, [activeGuildId, lockedinitiativeId]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [initiativeFilter, setPage]);
+
+  const queuesQuery = useQueuesList({
+    ...(initiativeFilter !== initiative_FILTER_ALL
+      ? { initiative_id: Number(initiativeFilter) }
+      : {}),
+    page,
+    page_size: 20,
+  });
+
+  const initiativesQuery = useInitiatives();
+  const initiatives = useMemo(
+    () => (initiativesQuery.data ?? []).filter((init) => init.queues_enabled),
+    [initiativesQuery.data],
+  );
+
+  // Build Initiative name lookup
+  const initiativeNameMap = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const init of initiatives) {
+      map.set(init.id, init.name);
+    }
+    return map;
+  }, [initiatives]);
+
+  // Filter initiatives where user can create queues
+  const creatableInitiatives = useMemo(() => {
+    if (!user) return [];
+    return initiatives.filter((Initiative) =>
+      Initiative.members.some(
+        (member) =>
+          member.user.id === user.id && member.role === "project_manager",
+      ),
+    );
+  }, [initiatives, user]);
+
+  // Determine if user can create queues
+  const canCreateQueues = useMemo(() => {
+    if (canCreate !== undefined) return canCreate;
+    if (filteredinitiativeId && filteredinitiativePermissions) {
+      return canCreatePermission(filteredinitiativePermissions, "queues");
+    }
+    if (lockedinitiativeId) {
+      return creatableInitiatives.some((Initiative) => Initiative.id === lockedinitiativeId);
+    }
+    return creatableInitiatives.length > 0;
+  }, [
+    canCreate,
+    filteredinitiativeId,
+    filteredinitiativePermissions,
+    lockedinitiativeId,
+    creatableInitiatives,
+  ]);
+
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const getDefaultFiltersVisibility = () =>
+    typeof window !== "undefined" &&
+    window.matchMedia("(min-width: 640px)").matches;
+  const [filtersOpen, setFiltersOpen] = useState(getDefaultFiltersVisibility);
+
+  // Open create dialog when ?create=true is in URL
+  useEffect(() => {
+    const shouldCreate = searchParams.create === "true";
+    if (shouldCreate && !createDialogOpen && !isClosingCreateDialog.current) {
+      setCreateDialogOpen(true);
+    }
+    if (!shouldCreate) {
+      isClosingCreateDialog.current = false;
+    }
+  }, [searchParams, createDialogOpen]);
+
+  const handleCreateDialogOpenChange = (open: boolean) => {
+    setCreateDialogOpen(open);
+    if (!open && searchParams.create) {
+      isClosingCreateDialog.current = true;
+      void router.navigate({
+        to: gp("/queues"),
+        search: { initiativeId: searchParams.initiativeId },
+        replace: true,
+      });
+    }
+  };
+
+  const handleQueueCreated = (queue: { id: number }) => {
+    void router.navigate({
+      to: gp(`/queues/${queue.id}`),
+    });
+  };
+
+  const totalCount = queuesQuery.data?.total_count ?? 0;
+  const hasNext = queuesQuery.data?.has_next ?? false;
+  const pageSize = 20;
+  const totalPages = pageSize > 0 ? Math.ceil(totalCount / pageSize) : 1;
+
+  // Client-side filtering by search query and status
+  const queues = useMemo(() => {
+    const items = queuesQuery.data?.items ?? [];
+    const query = searchQuery.trim().toLowerCase();
+    return items.filter((queue) => {
+      const matchesSearch = !query || queue.name.toLowerCase().includes(query);
+      const matchesStatus =
+        statusFilter === "all" ||
+        (statusFilter === "active" && queue.is_active) ||
+        (statusFilter === "inactive" && !queue.is_active);
+      return matchesSearch && matchesStatus;
+    });
+  }, [queuesQuery.data, searchQuery, statusFilter]);
+
+  const lockedinitiativeName = lockedinitiativeId
+    ? (initiativeNameMap.get(lockedinitiativeId) ?? null)
+    : null;
+
+  return (
+    <div className="space-y-6">
+      {!lockedinitiativeId && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="flex items-baseline gap-4">
+              <h1 className="font-semibold text-3xl tracking-tight">
+                {t("title")}
+              </h1>
+              {canCreateQueues && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setCreateDialogOpen(true)}
+                >
+                  <Plus className="h-4 w-4" />
+                  {t("createQueue")}
+                </Button>
+              )}
+            </div>
+            <p className="text-muted-foreground text-sm">
+              {t("noQueuesDescription")}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {lockedinitiativeId && canCreateQueues && (
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <Button variant="outline" onClick={() => setCreateDialogOpen(true)}>
+            <Plus className="h-4 w-4" />
+            {t("createQueue")}
+          </Button>
+        </div>
+      )}
+
+      <QueuesFilterBar
+        searchQuery={searchQuery}
+        onSearchQueryChange={setSearchQuery}
+        statusFilter={statusFilter}
+        onStatusFilterChange={setStatusFilter}
+        initiativeFilter={initiativeFilter}
+        oninitiativeFilterChange={setinitiativeFilter}
+        lockedinitiativeId={lockedinitiativeId}
+        lockedinitiativeName={lockedinitiativeName}
+        initiatives={initiatives}
+        filtersOpen={filtersOpen}
+        onFiltersOpenChange={setFiltersOpen}
+      />
+
+      {/* Content */}
+      {queuesQuery.isLoading ? (
+        <div className="flex items-center gap-2 text-muted-foreground text-sm">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          {t("loading")}
+        </div>
+      ) : queuesQuery.isError ? (
+        <p className="text-destructive text-sm">{t("loadError")}</p>
+      ) : queues.length > 0 ? (
+        <>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {queues.map((queue) => (
+              <QueueCard
+                key={queue.id}
+                queue={queue}
+                initiativeName={initiativeNameMap.get(queue.initiative_id)}
+              />
+            ))}
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+              >
+                {t("previous")}
+              </Button>
+              <span className="text-muted-foreground text-sm">
+                {page} / {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((p) => p + 1)}
+                disabled={!hasNext}
+              >
+                {t("next")}
+              </Button>
+            </div>
+          )}
+        </>
+      ) : totalCount > 0 ? (
+        <p className="text-muted-foreground text-sm">
+          {t("filters.noMatchingQueues")}
+        </p>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("noQueues")}</CardTitle>
+            <CardDescription>{t("noQueuesDescription")}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              onClick={() => setCreateDialogOpen(true)}
+              disabled={!canCreateQueues}
+            >
+              {t("createFirst")}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      <CreateQueueDialog
+        open={createDialogOpen}
+        onOpenChange={handleCreateDialogOpenChange}
+        initiativeId={lockedinitiativeId ?? undefined}
+        defaultinitiativeId={
+          initiativeFilter !== initiative_FILTER_ALL ? Number(initiativeFilter) : undefined
+        }
+        onSuccess={handleQueueCreated}
+      />
+
+      {canCreateQueues && (
+        <Button
+          type="button"
+          className="fixed right-6 bottom-6 z-40 h-12 rounded-full px-6 shadow-lg shadow-primary/40"
+          onClick={() => setCreateDialogOpen(true)}
+        >
+          <Plus className="h-4 w-4" />
+          {t("createQueue")}
+        </Button>
+      )}
+    </div>
+  );
+};
+
+export function QueuesPage() {
+  return <QueuesView />;
+}

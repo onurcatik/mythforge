@@ -1,0 +1,224 @@
+import type { LucideIcon } from "lucide-react";
+import {
+  FileCode,
+  FileSpreadsheet,
+  FileText,
+  ImageIcon,
+  PenTool,
+  Presentation,
+  ScrollText,
+  Sheet,
+} from "lucide-react";
+
+/**
+ * Format bytes to a human-readable string.
+ * @param bytes - Number of bytes
+ * @param decimals - Number of decimal places (default: 1)
+ */
+export function formatBytes(bytes: number, decimals = 1): string {
+  if (bytes === 0) return "0 Bytes";
+
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
+
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+  return `${parseFloat((bytes / k ** i).toFixed(dm))} ${sizes[i]}`;
+}
+
+/**
+ * Get the file extension from a filename or URL.
+ * @param filename - Filename or URL path
+ * @returns Extension without the dot (e.g., "pdf")
+ */
+export function getFileExtension(filename: string | null | undefined): string {
+  if (!filename) return "";
+  const lastDot = filename.lastIndexOf(".");
+  if (lastDot === -1) return "";
+  return filename.substring(lastDot + 1).toLowerCase();
+}
+
+/**
+ * Get a display-friendly file type label from MIME type or extension.
+ */
+export function getFileTypeLabel(
+  mimeType: string | null | undefined,
+  filename: string | null | undefined
+): string {
+  // Try to get extension from filename first
+  const ext = getFileExtension(filename);
+
+  const extensionLabels: Record<string, string> = {
+    pdf: "PDF",
+    doc: "Word",
+    docx: "Word",
+    xls: "Excel",
+    xlsx: "Excel",
+    ppt: "PowerPoint",
+    pptx: "PowerPoint",
+    txt: "Text",
+    html: "HTML",
+    htm: "HTML",
+    png: "Image",
+    jpg: "Image",
+    jpeg: "Image",
+    gif: "Image",
+    webp: "Image",
+    svg: "Image",
+    md: "Markdown",
+    markdown: "Markdown",
+  };
+
+  if (ext && extensionLabels[ext]) {
+    return extensionLabels[ext];
+  }
+
+  // Fall back to MIME type
+  const mimeLabels: Record<string, string> = {
+    "application/pdf": "PDF",
+    "application/msword": "Word",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word",
+    "application/vnd.ms-excel": "Excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel",
+    "application/vnd.ms-powerpoint": "PowerPoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "PowerPoint",
+    "text/plain": "Text",
+    "text/html": "HTML",
+    "image/png": "Image",
+    "image/jpeg": "Image",
+    "image/gif": "Image",
+    "image/webp": "Image",
+    "image/svg+xml": "Image",
+    "text/markdown": "Markdown",
+  };
+
+  if (mimeType && mimeLabels[mimeType]) {
+    return mimeLabels[mimeType];
+  }
+
+  return "File";
+}
+
+/**
+ * Return the color class for a document icon based on its type.
+ * For file documents, the color depends on the file format; native docs
+ * get the default muted foreground.
+ */
+export function getDocumentIconColor(
+  documentType: string | null | undefined,
+  mimeType: string | null | undefined,
+  filename: string | null | undefined
+): string {
+  if (documentType === "whiteboard") return "text-purple-500";
+  if (documentType === "spreadsheet") return "text-emerald-500";
+  if (documentType !== "file") return "text-muted-foreground";
+  const label = getFileTypeLabel(mimeType, filename);
+  switch (label) {
+    case "PDF":
+      return "text-red-500";
+    case "Word":
+      return "text-blue-600";
+    case "Excel":
+      return "text-green-600";
+    case "PowerPoint":
+      return "text-orange-500";
+    case "Text":
+      return "text-gray-500";
+    case "HTML":
+      return "text-purple-500";
+    case "Image":
+      return "text-emerald-500";
+    case "Markdown":
+      return "text-indigo-500";
+    default:
+      return "text-muted-foreground";
+  }
+}
+
+/**
+ * Return the Lucide icon component for a document.
+ * Native documents get ScrollText; file documents get a format-specific icon.
+ */
+export function getDocumentIcon(
+  documentType: string | null | undefined,
+  mimeType: string | null | undefined,
+  filename: string | null | undefined
+): LucideIcon {
+  if (documentType === "whiteboard") return PenTool;
+  if (documentType === "spreadsheet") return Sheet;
+  if (documentType !== "file") return ScrollText;
+  const label = getFileTypeLabel(mimeType, filename);
+  if (label === "Image") return ImageIcon;
+  if (label === "Markdown") return FileCode;
+  if (label === "Excel") return FileSpreadsheet;
+  if (label === "PowerPoint") return Presentation;
+  return FileText;
+}
+
+/**
+ * Get the icon name for a file type (for use with Lucide icons).
+ */
+export function getFileTypeIcon(
+  mimeType: string | null | undefined,
+  filename: string | null | undefined
+):
+  | "file-text"
+  | "file-spreadsheet"
+  | "presentation"
+  | "file-type"
+  | "image"
+  | "file-code"
+  | "file" {
+  const ext = getFileExtension(filename);
+
+  if (ext === "pdf" || mimeType === "application/pdf") {
+    return "file-text";
+  }
+
+  if (
+    ext === "doc" ||
+    ext === "docx" ||
+    ext === "txt" ||
+    mimeType === "application/msword" ||
+    mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    mimeType === "text/plain"
+  ) {
+    return "file-text";
+  }
+
+  if (
+    ext === "xls" ||
+    ext === "xlsx" ||
+    mimeType === "application/vnd.ms-excel" ||
+    mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  ) {
+    return "file-spreadsheet";
+  }
+
+  if (
+    ext === "ppt" ||
+    ext === "pptx" ||
+    mimeType === "application/vnd.ms-powerpoint" ||
+    mimeType === "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  ) {
+    return "presentation";
+  }
+
+  if (ext === "html" || ext === "htm" || mimeType === "text/html") {
+    return "file-type";
+  }
+
+  if (
+    ["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext) ||
+    mimeType?.startsWith("image/")
+  ) {
+    return "image";
+  }
+
+  if (ext === "md" || ext === "markdown" || mimeType === "text/markdown") {
+    return "file-code";
+  }
+
+  return "file";
+}

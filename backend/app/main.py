@@ -1,0 +1,290 @@
+import asyncio
+import logging
+from contextlib import suppress
+from pathlib import Path
+
+from typing import Annotated, Any
+
+from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
+from fastapi.responses import FileResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from app.api.deps import get_upload_user
+from app.api.v1.api import api_router
+from app.core.rate_limit import limiter
+from app.core.config import settings
+from app.core.version import __version__
+from app.db.session import AdminSessionLocal, get_admin_session, run_migrations
+from app.models.user import User
+from app.services import app_settings as app_settings_service
+from app.services import background_tasks as background_tasks_service
+
+logger = logging.getLogger(__name__)
+
+uploads_path = Path(settings.UPLOADS_DIR)
+uploads_path.mkdir(parents=True, exist_ok=True)
+static_path = Path(settings.STATIC_DIR)
+static_path.mkdir(parents=True, exist_ok=True)
+static_index_path = static_path / "index.html"
+static_root = static_path.resolve()
+reserved_prefixes = [
+    prefix.strip("/")
+    for prefix in {settings.API_V1_STR}
+    if prefix and prefix.strip("/")
+]
+
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version=__version__,
+    docs_url=f"{settings.API_V1_STR}/docs",
+    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    redoc_url=None,
+)
+
+# Initialize rate limiter (uses shared limiter from app.core.rate_limit)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: Any) -> Response:
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/uploads/{filename:path}", include_in_schema=False)
+@limiter.limit("600/minute")
+async def serve_upload_file(
+    request: Request,
+    filename: str,
+    current_user: Annotated[User, Depends(get_upload_user)],
+    session: Annotated[AsyncSession, Depends(get_admin_session)],
+) -> FileResponse:
+    """Serve an uploaded file — requires authentication and guild membership."""
+    from pathlib import Path as FilePath
+
+    from sqlmodel import select
+
+    from app.models.guild import GuildMembership
+    from app.models.upload import Upload
+
+    try:
+        file_path = (uploads_path / filename).resolve()
+        file_path.relative_to(uploads_path.resolve())
+    except ValueError:
+        raise HTTPException(status_code=404)
+    if not file_path.is_file():
+        raise HTTPException(status_code=404)
+
+    # Guild authorization: look up upload record and verify membership
+    record_result = await session.exec(
+        select(Upload).where(Upload.filename == FilePath(filename).name)
+    )
+    record = record_result.one_or_none()
+    if record is not None:
+        membership_result = await session.exec(
+            select(GuildMembership).where(
+                GuildMembership.guild_id == record.guild_id,
+                GuildMembership.user_id == current_user.id,
+            )
+        )
+        if membership_result.one_or_none() is None:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
+
+    headers: dict[str, str] = {}
+    if filename.lower().endswith((".svg", ".html", ".htm")):
+        headers["Content-Disposition"] = "attachment"
+        headers["Content-Security-Policy"] = "script-src 'none'"
+        headers["X-Content-Type-Options"] = "nosniff"
+    logger.info("upload_served filename=%s user=%d", filename, current_user.id)
+    return FileResponse(file_path, headers=headers)
+
+
+app.include_router(api_router, prefix=settings.API_V1_STR)
+
+
+def _is_reserved_path(path: str) -> bool:
+    normalized = path.strip("/")
+    for prefix in reserved_prefixes:
+        if not prefix:
+            continue
+        if normalized == prefix or normalized.startswith(f"{prefix}/"):
+            return True
+    return False
+
+
+def _resolve_static_file(path: str) -> Path | None:
+    try:
+        candidate = (static_path / path).resolve()
+        candidate.relative_to(static_root)
+    except ValueError:
+        return None
+    if candidate.is_file():
+        return candidate
+    return None
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def serve_spa(full_path: str) -> FileResponse:
+    if _is_reserved_path(full_path):
+        raise HTTPException(status_code=404)
+    static_file = _resolve_static_file(full_path) if full_path else None
+    if static_file:
+        if full_path.startswith("assets/"):
+            return FileResponse(
+                static_file,
+                headers={"Cache-Control": "public, max-age=31536000, immutable"},
+            )
+        return FileResponse(
+            static_file,
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+    if static_index_path.is_file():
+        return FileResponse(
+            static_index_path,
+            headers={"Cache-Control": "no-cache"},
+        )
+    raise HTTPException(status_code=404, detail="SPA bundle not found")
+
+
+def _inject_query_schemas(openapi_schema: dict) -> None:
+    """Inject shared query filter/sort schemas into OpenAPI components.
+
+    These schemas (FilterCondition, FilterOp, FilterGroup, SortField, SortDir)
+    are defined in ``app.schemas.query`` and used by list endpoints that accept
+    a ``conditions`` JSON query parameter.  Injecting them here lets Orval
+    auto-generate TypeScript types so the frontend never hand-defines them.
+    """
+    from app.schemas.query import (
+        FilterCondition,
+        FilterGroup,
+        FilterOp,
+        SortDir,
+        SortField,
+    )
+
+    schemas = openapi_schema.setdefault("components", {}).setdefault("schemas", {})
+
+    for model in (FilterCondition, FilterGroup, SortField):
+        full = model.model_json_schema(
+            ref_template="#/components/schemas/{model}",
+        )
+        defs = full.pop("$defs", {})
+        # For self-referencing models (e.g. FilterGroup) the top level is
+        # just {"$ref": "..."} and the real schema lives in $defs.
+        if "$ref" in full and not full.get("properties"):
+            real = defs.pop(model.__name__, full)
+            schemas[model.__name__] = real
+        else:
+            schemas[model.__name__] = full
+        for name, sub_schema in defs.items():
+            schemas.setdefault(name, sub_schema)
+
+    # Enums as standalone schemas (may already be added via $defs above)
+    for enum_cls in (FilterOp, SortDir):
+        schemas.setdefault(
+            enum_cls.__name__,
+            {"title": enum_cls.__name__, "type": "string", "enum": [e.value for e in enum_cls]},
+        )
+
+    # Override query parameters to expose their real types instead of the raw
+    # ``string`` that FastAPI infers from the endpoint signature.  The Axios
+    # paramsSerializer on the frontend JSON-encodes arrays of objects automatically.
+    fc_ref = {"$ref": "#/components/schemas/FilterCondition"}
+    sf_ref = {"$ref": "#/components/schemas/SortField"}
+    for path_item in openapi_schema.get("paths", {}).values():
+        for operation in path_item.values():
+            if not isinstance(operation, dict):
+                continue
+            for param in operation.get("parameters", []):
+                if param.get("name") == "conditions" and param.get("in") == "query":
+                    param["schema"] = {"type": "array", "items": fc_ref}
+                    param.pop("anyOf", None)
+                if param.get("name") == "sorting" and param.get("in") == "query":
+                    param["schema"] = {"type": "array", "items": sf_ref}
+                    param.pop("anyOf", None)
+
+
+def custom_openapi() -> dict:
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+
+    components = openapi_schema.setdefault("components", {})
+    security_schemes = components.setdefault("securitySchemes", {})
+    security_schemes.setdefault(
+        "ApiKeyAuth",
+        {
+            "type": "http",
+            "scheme": "bearer",
+            "description": "Paste an admin API key issued from Settings → API Keys.",
+        },
+    )
+
+    _inject_query_schemas(openapi_schema)
+
+    for path_item in openapi_schema.get("paths", {}).values():
+        for operation in path_item.values():
+            if not isinstance(operation, dict):
+                continue
+            security = operation.get("security")
+            if not security:
+                continue
+            has_api_key = any(isinstance(item, dict) and "ApiKeyAuth" in item for item in security)
+            if not has_api_key:
+                security.append({"ApiKeyAuth": []})
+
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
+
+
+@app.on_event("startup")
+async def on_startup() -> None:
+    from app.db.init_db import check_pre_baseline_db
+    from app.db.soft_delete_filter import install_soft_delete_filter
+
+    install_soft_delete_filter()
+    await check_pre_baseline_db()
+    await run_migrations()
+    async with AdminSessionLocal() as session:
+        await app_settings_service.ensure_defaults(session)
+    app.state.notification_tasks = background_tasks_service.start_background_tasks()
+
+
+@app.on_event("shutdown")
+async def on_shutdown() -> None:
+    tasks = getattr(app.state, "notification_tasks", [])
+    for task in tasks:
+        task.cancel()
+    for task in tasks:
+        with suppress(asyncio.CancelledError):
+            await task

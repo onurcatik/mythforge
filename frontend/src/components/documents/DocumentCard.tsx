@@ -1,0 +1,194 @@
+import { Link } from "@tanstack/react-router";
+import { formatDistanceToNow } from "date-fns";
+import { useTranslation } from "react-i18next";
+
+import type { DocumentSummary } from "@/api/generated/initiativeAPI.schemas";
+import { PropertyValueCell } from "@/components/properties/PropertyValueCell";
+import { nonEmptyPropertySummaries } from "@/components/properties/propertyHelpers";
+import { TagBadge } from "@/components/tags/TagBadge";
+import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { useDateLocale } from "@/hooks/useDateLocale";
+import {
+  getDocumentIcon,
+  getDocumentIconColor,
+  getFileTypeLabel,
+} from "@/lib/fileUtils";
+import { useGuildPath } from "@/lib/guildUrl";
+import { InitiativeColorDot } from "@/lib/initiativeColors";
+import { matchSmartLinkProvider } from "@/lib/smartLinkProviders";
+import { resolveUploadUrl } from "@/lib/uploadUrl";
+import { cn } from "@/lib/utils";
+
+interface DocumentCardProps {
+  document: DocumentSummary;
+  className?: string;
+  hideinitiative?: boolean;
+}
+
+export const DocumentCard = ({
+  document,
+  className,
+  hideinitiative,
+}: DocumentCardProps) => {
+  const { t } = useTranslation("documents");
+  const dateLocale = useDateLocale();
+  const gp = useGuildPath();
+  const projectCount = document.projects.length;
+  const commentCount = document.comment_count ?? 0;
+  const isFileDocument = document.document_type === "file";
+  const fileTypeLabel = isFileDocument
+    ? getFileTypeLabel(document.file_content_type, document.original_filename)
+    : null;
+
+  // Smart-link docs use the matched provider's brand icon when we recognize
+  // the URL. The provider registry falls back to a generic Link icon for
+  // unknown URLs, which is still a better default than the scroll icon
+  // getDocumentIcon would produce for smart_link.
+  const smartLinkMatch =
+    document.document_type === "smart_link" && document.smart_link_url
+      ? matchSmartLinkProvider(document.smart_link_url)
+      : null;
+  const FileIcon = smartLinkMatch
+    ? smartLinkMatch.icon
+    : getDocumentIcon(
+        document.document_type,
+        document.file_content_type,
+        document.original_filename,
+      );
+  const fileIconColor = smartLinkMatch
+    ? "text-muted-foreground"
+    : getDocumentIconColor(
+        document.document_type,
+        document.file_content_type,
+        document.original_filename,
+      );
+
+  return (
+    <Link
+      to={gp(`/documents/${document.id}`)}
+      className={cn(
+        "group block w-full overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-sm transition hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-lg",
+        className,
+      )}
+      // style={{ aspectRatio: "2 / 3" }}
+    >
+      <div className="relative aspect-square overflow-hidden border-b bg-muted">
+        {document.featured_image_url ? (
+          <img
+            src={resolveUploadUrl(document.featured_image_url) ?? undefined}
+            alt=""
+            loading="lazy"
+            className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center">
+            <FileIcon
+              className={cn(
+                "h-10 w-10 md:h-20 md:w-20 lg:h-24 lg:w-24 xl:h-28 xl:w-28",
+                fileIconColor,
+              )}
+            />
+          </div>
+        )}
+        <div className="absolute right-2 bottom-2 flex flex-col items-end gap-1 text-muted-foreground text-xs">
+          {isFileDocument && fileTypeLabel ? (
+            <Badge variant="secondary">{fileTypeLabel}</Badge>
+          ) : null}
+          {document.document_type === "whiteboard" ? (
+            <Badge variant="secondary">{t("card.whiteboardLabel")}</Badge>
+          ) : null}
+          {document.document_type === "spreadsheet" ? (
+            <Badge variant="secondary">{t("card.spreadsheetLabel")}</Badge>
+          ) : null}
+          {smartLinkMatch ? (
+            <Badge variant="secondary">{smartLinkMatch.label}</Badge>
+          ) : null}
+          {document.is_template ? (
+            <Badge variant="outline">{t("card.template")}</Badge>
+          ) : null}
+          <Badge variant="secondary">
+            {t("card.projects", { count: projectCount })}
+          </Badge>
+          <Badge variant="secondary">
+            {t("card.comments", { count: commentCount })}
+          </Badge>
+        </div>
+      </div>
+      <div className="flex h-full flex-col gap-3 p-4">
+        <div className="space-y-1">
+          <div className="flex items-start justify-between gap-2">
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <h3 className="line-clamp-1 font-semibold text-card-foreground text-lg leading-tight">
+                    {document.title}
+                  </h3>
+                </TooltipTrigger>
+                <TooltipContent side="top" align="start">
+                  <p>{document.title}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+          <p className="text-muted-foreground text-xs">
+            {t("card.updated", {
+              date: formatDistanceToNow(new Date(document.updated_at), {
+                addSuffix: true,
+                locale: dateLocale,
+              }),
+            })}
+          </p>
+          {document.initiative && !hideinitiative ? (
+            <Link
+              to={gp(`/initiatives/${document.initiative.id}`)}
+              className="inline-flex items-center gap-2 text-muted-foreground text-sm"
+            >
+              <InitiativeColorDot color={document.initiative.color} />
+              {document.initiative.name}
+            </Link>
+          ) : null}
+          {document.tags && document.tags.length > 0 ? (
+            <div className="flex flex-wrap gap-1">
+              {document.tags.slice(0, 3).map((tag) => (
+                <TagBadge
+                  key={tag.id}
+                  tag={tag}
+                  size="sm"
+                  to={gp(`/tags/${tag.id}`)}
+                />
+              ))}
+              {document.tags.length > 3 && (
+                <span className="text-muted-foreground text-xs">
+                  +{document.tags.length - 3}
+                </span>
+              )}
+            </div>
+          ) : null}
+          {(() => {
+            const propertyChips = nonEmptyPropertySummaries(
+              document.properties,
+            );
+            if (propertyChips.length === 0) return null;
+            return (
+              <div className="flex flex-wrap gap-1">
+                {propertyChips.map((summary) => (
+                  <PropertyValueCell
+                    key={summary.property_id}
+                    summary={summary}
+                    variant="chip"
+                  />
+                ))}
+              </div>
+            );
+          })()}
+        </div>
+      </div>
+    </Link>
+  );
+};

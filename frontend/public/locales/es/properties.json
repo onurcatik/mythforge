@@ -1,0 +1,89 @@
+{
+  "title": "Propiedades",
+  "addProperty": "Agregar propiedad",
+  "noProperties": "Sin propiedades",
+  "saving": "Guardando\u2026",
+  "saved": "Guardado",
+  "remove": "Eliminar propiedad",
+  "types": {
+    "text": "Texto",
+    "number": "Número",
+    "checkbox": "Casilla",
+    "date": "Fecha",
+    "datetime": "Fecha y hora",
+    "url": "URL",
+    "select": "Selección",
+    "multi_select": "Selección múltiple",
+    "user_reference": "Persona"
+  },
+  "picker": {
+    "placeholder": "Buscar propiedades\u2026",
+    "empty": "Ninguna propiedad coincide",
+    "createHeading": "Crear nueva propiedad",
+    "namePlaceholder": "Nombre de la propiedad",
+    "typeLabel": "Tipo",
+    "createButton": "Crear",
+    "optionValuePlaceholder": "Valor",
+    "optionLabelPlaceholder": "Etiqueta",
+    "addOption": "Agregar opción",
+    "removeOption": "Eliminar opción",
+    "optionsRequired": "Agregue al menos una opción"
+  },
+  "input": {
+    "textPlaceholder": "Vacío",
+    "numberPlaceholder": "0",
+    "urlPlaceholder": "https://\u2026",
+    "selectPlaceholder": "Seleccionar\u2026",
+    "multiSelectPlaceholder": "Seleccionar opciones",
+    "userPlaceholder": "Asignar persona\u2026",
+    "unknownOption": "Opción desconocida: {{value}}",
+    "clear": "Limpiar",
+    "searchOptions": "Buscar o crear opción\u2026",
+    "createOption": "Crear \"{{label}}\"",
+    "optionAdded": "Opción agregada",
+    "optionAddFailed": "No se pudo agregar la opción"
+  },
+  "cell": {
+    "emptyValue": "—",
+    "none": "Ninguno"
+  },
+  "manager": {
+    "title": "Propiedades personalizadas",
+    "description": "Defina metadatos reutilizables para documentos, tareas y eventos en esta iniciativa.",
+    "newDefinition": "Nueva propiedad",
+    "editDefinition": "Editar propiedad",
+    "nameLabel": "Nombre",
+    "typeLabel": "Tipo",
+    "optionsLabel": "Opciones",
+    "addOption": "Agregar opción",
+    "removeOption": "Eliminar opción",
+    "optionValuePlaceholder": "Valor",
+    "optionLabelPlaceholder": "Etiqueta",
+    "colorLabel": "Color",
+    "delete": "Eliminar propiedad",
+    "deleteConfirmTitle": "¿Eliminar esta propiedad?",
+    "deleteConfirmBody": "Esto eliminará la propiedad y todos los valores asociados a documentos, tareas y eventos.",
+    "orphanedWarning": "{{count}} valores existentes hacen referencia a opciones eliminadas. Se mostrarán como 'Opción desconocida' hasta que se actualicen.",
+    "createError": "No se pudo crear la propiedad",
+    "updateError": "No se pudo actualizar la propiedad",
+    "deleteError": "No se pudo eliminar la propiedad",
+    "setValuesError": "No se pudo guardar el valor de la propiedad"
+  },
+  "filter": {
+    "addFilter": "Agregar filtro de propiedad",
+    "property": "Propiedad",
+    "operator": "Op",
+    "value": "Valor",
+    "remove": "Eliminar filtro de propiedad",
+    "ops": {
+      "eq": "es",
+      "lt": "<",
+      "lte": "≤",
+      "gt": ">",
+      "gte": "≥",
+      "in_": "en",
+      "ilike": "contiene",
+      "is_null": "está vacío"
+    }
+  }
+}

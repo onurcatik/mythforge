@@ -1,0 +1,61 @@
+import type { Row } from "@tanstack/react-table";
+
+import type { TaskPriority } from "@/api/generated/initiativeAPI.schemas";
+
+const toTimestamp = (value: unknown): number | null => {
+  if (!value) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.getTime();
+  }
+
+  if (typeof value === "string" || typeof value === "number") {
+    const date = new Date(value);
+    const time = date.getTime();
+    return Number.isNaN(time) ? null : time;
+  }
+
+  return null;
+};
+
+/**
+ * Sorts nullable date-ish values while keeping undated rows at the bottom.
+ */
+export const dateSortingFn = <TData>(rowA: Row<TData>, rowB: Row<TData>, columnId: string) => {
+  const valueA = toTimestamp(rowA.getValue(columnId));
+  const valueB = toTimestamp(rowB.getValue(columnId));
+
+  if (valueA === valueB) {
+    return 0;
+  }
+
+  if (valueA === null) {
+    return 1;
+  }
+
+  if (valueB === null) {
+    return -1;
+  }
+
+  return valueA - valueB;
+};
+
+const priorityRank: Record<TaskPriority, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+  urgent: 3,
+};
+
+/**
+ * Sorts by task priority (low to urgent)
+ */
+export const prioritySortingFn = <TData>(rowA: Row<TData>, rowB: Row<TData>, columnId: string) => {
+  const priorityA = rowA.getValue<TaskPriority>(columnId);
+  const priorityB = rowB.getValue<TaskPriority>(columnId);
+  const aRank = priorityA ? priorityRank[priorityA] : -1;
+  const bRank = priorityB ? priorityRank[priorityB] : -1;
+  return aRank - bRank;
+};

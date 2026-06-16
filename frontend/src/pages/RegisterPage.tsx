@@ -1,0 +1,414 @@
+import { Link, useRouter, useSearch } from "@tanstack/react-router";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+
+import { apiClient } from "@/api/client";
+import type { GuildInviteStatus } from "@/api/generated/initiativeAPI.schemas";
+import { CaptchaWidget } from "@/components/auth/CaptchaWidget";
+import { LogoIcon } from "@/components/LogoIcon";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useAppConfig } from "@/hooks/useAppConfig";
+import { useAuth } from "@/hooks/useAuth";
+import { getErrorMessage } from "@/lib/errorMessage";
+import {
+  PASSWORD_MIN_LENGTH,
+  validatePasswordLocal,
+} from "@/lib/passwordPolicy";
+
+interface RegisterPageProps {
+  bootstrapMode?: boolean;
+}
+
+export const RegisterPage = ({ bootstrapMode = false }: RegisterPageProps) => {
+  const { t } = useTranslation(["auth", "common", "errors"]);
+  const router = useRouter();
+  const searchParams = useSearch({ strict: false }) as { invite_code?: string };
+  const { register, login } = useAuth();
+  const [email, setEmail] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [inviteStatus, setInviteStatus] = useState<GuildInviteStatus | null>(
+    null,
+  );
+  const [inviteStatusError, setInviteStatusError] = useState<string | null>(
+    null,
+  );
+  const [inviteStatusLoading, setInviteStatusLoading] = useState(false);
+  const [publicRegistrationEnabled, setPublicRegistrationEnabled] = useState<
+    boolean | null
+  >(null);
+  // Captcha state. ``captcha`` is the runtime config from
+  // ``GET /api/v1/config`` (null on deployments without captcha
+  // configured); ``captchaToken`` is the value the widget hands us
+  // after a solve. Bootstrap-first-user mode mirrors the backend's
+  // skip rule and never renders the widget.
+  const { captcha } = useAppConfig();
+  const [captchaToken, setCaptchaToken] = useState<string>("");
+  // Captcha tokens are single-use: once the backend forwards one to
+  // the provider's siteverify endpoint, replaying it returns a
+  // "timeout-or-duplicate" error and the SPA surfaces it as
+  // ``CAPTCHA_INVALID``. So whenever a submit attempt completes —
+  // whether the registration succeeded, failed for a non-captcha
+  // reason, or failed for a captcha reason — we bump this key to
+  // remount ``<CaptchaWidget>``, which clears the consumed token and
+  // re-renders a fresh challenge. Without this, any post-verify
+  // failure (DB blip, email send error, etc.) traps the user in a
+  // CAPTCHA_INVALID loop with no exit short of a page reload.
+  const [captchaResetKey, setCaptchaResetKey] = useState(0);
+  const captchaRequired = !bootstrapMode && captcha !== null;
+  const inviteCode = useMemo(() => {
+    const code = searchParams.invite_code;
+    return code && code.trim().length > 0 ? code.trim() : undefined;
+  }, [searchParams]);
+
+  // Fetch bootstrap status to check if public registration is enabled
+  useEffect(() => {
+    if (bootstrapMode) {
+      // Bootstrap mode always allows registration
+      setPublicRegistrationEnabled(true);
+      return;
+    }
+    const fetchBootstrapStatus = async () => {
+      try {
+        const response = await apiClient.get<{
+          has_users: boolean;
+          public_registration_enabled: boolean;
+        }>("/auth/bootstrap");
+        setPublicRegistrationEnabled(response.data.public_registration_enabled);
+      } catch {
+        // Default to enabled if we can't fetch
+        setPublicRegistrationEnabled(true);
+      }
+    };
+    void fetchBootstrapStatus();
+  }, [bootstrapMode]);
+
+  useEffect(() => {
+    let ignore = false;
+    if (!inviteCode) {
+      setInviteStatus(null);
+      setInviteStatusError(null);
+      setInviteStatusLoading(false);
+      return () => {
+        ignore = true;
+      };
+    }
+    setInviteStatus(null);
+    setInviteStatusError(null);
+    setInviteStatusLoading(true);
+    apiClient
+      .get<GuildInviteStatus>(
+        `/guilds/invite/${encodeURIComponent(inviteCode)}`,
+      )
+      .then((response) => {
+        if (ignore) {
+          return;
+        }
+        setInviteStatus(response.data);
+        setInviteStatusError(
+          response.data.is_valid
+            ? null
+            : (response.data.reason ?? t("register.inviteNoLongerValid")),
+        );
+      })
+      .catch((error) => {
+        if (ignore) {
+          return;
+        }
+        console.error("Failed to load invite", error);
+        setInviteStatus(null);
+        setInviteStatusError(t("register.unableToLoadInvite"));
+      })
+      .finally(() => {
+        if (!ignore) {
+          setInviteStatusLoading(false);
+        }
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [inviteCode, t]);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    setInfoMessage(null);
+    try {
+      if (password !== confirmPassword) {
+        setError(t("register.passwordMismatch"));
+        return;
+      }
+      const policyError = validatePasswordLocal(password);
+      if (policyError) {
+        setError(policyError);
+        return;
+      }
+      if (inviteCode && inviteStatus && !inviteStatus.is_valid) {
+        setError(inviteStatus.reason ?? t("register.inviteInvalid"));
+        return;
+      }
+      if (captchaRequired && !captchaToken) {
+        setError(t("register.captchaRequired"));
+        return;
+      }
+      // Resolve the browser's IANA timezone (e.g. "America/Los_Angeles")
+      // so the new account starts on the user's wall clock instead of
+      // the backend's "UTC" default. ``Intl.DateTimeFormat`` is
+      // available everywhere this SPA already supports; the optional
+      // chain + ``|| undefined`` guard handles the unusual case where
+      // the resolved name comes back falsy, in which case we just
+      // omit the field and let the backend default apply.
+      const browserTimezone =
+        Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+      const createdUser = await register({
+        email: email.toLowerCase().trim(),
+        password,
+        full_name: fullName,
+        inviteCode,
+        timezone: browserTimezone,
+        captcha_token: captchaRequired ? captchaToken : undefined,
+      });
+      const isActive = createdUser.status === "active";
+      if (isActive && createdUser.email_verified) {
+        await login({ email: email.toLowerCase().trim(), password });
+        router.navigate({ to: "/", replace: true });
+      } else if (isActive && !createdUser.email_verified) {
+        setInfoMessage(t("register.verifyEmailMessage"));
+        setPassword("");
+        setConfirmPassword("");
+      } else {
+        setInfoMessage(t("register.pendingApproval"));
+        setPassword("");
+        setConfirmPassword("");
+      }
+    } catch (err) {
+      console.error(err);
+      setError(getErrorMessage(err, "auth:register.defaultError"));
+    } finally {
+      setSubmitting(false);
+      // Always reset the captcha after a submit attempt — see the
+      // ``captchaResetKey`` declaration above. Cheap to bump even
+      // when no widget is rendered (no captcha configured /
+      // bootstrap mode), since ``<CaptchaWidget>`` only mounts when
+      // ``captchaRequired`` is true.
+      if (captchaRequired) {
+        setCaptchaToken("");
+        setCaptchaResetKey((k) => k + 1);
+      }
+    }
+  };
+
+  const isDark = document.documentElement.classList.contains("dark");
+
+  // Show loading state while checking registration status
+  if (publicRegistrationEnabled === null) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-muted/60 px-4 py-12">
+        <p className="text-muted-foreground text-sm">{t("common:loading")}</p>
+      </div>
+    );
+  }
+
+  // Show invite required message if public registration is disabled and no invite code
+  if (!publicRegistrationEnabled && !inviteCode) {
+    return (
+      <div
+        style={{
+          backgroundImage: `url(${isDark ? "/images/hexWhite.svg" : "/images/hexBlack.svg"})`,
+          backgroundPosition: "center",
+          backgroundBlendMode: "screen",
+          backgroundSize: "67px 116px",
+        }}
+      >
+        <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-muted/60 px-4 py-12">
+          <div className="flex items-center gap-3 font-semibold text-3xl text-primary tracking-tight">
+            <LogoIcon
+              className="h-12 w-12"
+              aria-hidden="true"
+              focusable="false"
+            />
+            <span className="pride-wordmark">{t("common:appName")}</span>
+          </div>
+          <Card className="w-full max-w-md shadow-lg">
+            <CardHeader>
+              <CardTitle>{t("inviteRequired.title")}</CardTitle>
+              <CardDescription>{t("inviteRequired.subtitle")}</CardDescription>
+            </CardHeader>
+            <CardFooter className="text-muted-foreground text-sm">
+              {t("inviteRequired.haveAccount")}{" "}
+              <Link
+                className="ml-1 text-primary underline-offset-4 hover:underline"
+                to="/login"
+              >
+                {t("inviteRequired.signIn")}
+              </Link>
+            </CardFooter>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        backgroundImage: `url(${isDark ? "/images/hexWhite.svg" : "/images/hexBlack.svg"})`,
+        backgroundPosition: "center",
+        backgroundBlendMode: "screen",
+        backgroundSize: "67px 116px",
+      }}
+    >
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-muted/60 px-4 py-12">
+        <div className="flex items-center gap-3 font-semibold text-3xl text-primary tracking-tight">
+          <LogoIcon
+            className="h-12 w-12"
+            aria-hidden="true"
+            focusable="false"
+          />
+          <span className="pride-wordmark">{t("common:appName")}</span>
+        </div>
+        <Card className="w-full max-w-md shadow-lg">
+          <CardHeader>
+            <CardTitle>
+              {bootstrapMode
+                ? t("register.titleBootstrap")
+                : t("register.title")}
+            </CardTitle>
+            <CardDescription>
+              {bootstrapMode
+                ? t("register.subtitleBootstrap")
+                : t("register.subtitle")}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form className="space-y-4" onSubmit={handleSubmit}>
+              <div className="space-y-2">
+                <Label htmlFor="full-name">{t("register.fullNameLabel")}</Label>
+                <Input
+                  id="full-name"
+                  value={fullName}
+                  onChange={(event) => setFullName(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="register-email">
+                  {t("register.emailLabel")}
+                </Label>
+                <Input
+                  id="register-email"
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  autoCapitalize="none"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="register-password">
+                  {t("register.passwordLabel")}
+                </Label>
+                <Input
+                  id="register-password"
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  minLength={PASSWORD_MIN_LENGTH}
+                  required
+                />
+                <p
+                  className={
+                    password.length > 0 && password.length < PASSWORD_MIN_LENGTH
+                      ? "text-destructive text-xs"
+                      : "text-muted-foreground text-xs"
+                  }
+                >
+                  {t("auth:passwordPolicy.minLengthHelp")}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="confirm-password">
+                  {t("register.confirmPasswordLabel")}
+                </Label>
+                <Input
+                  id="confirm-password"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  required
+                />
+              </div>
+              {inviteCode ? (
+                <p className="text-muted-foreground text-sm">
+                  {inviteStatusLoading && t("register.checkingInvite")}
+                  {!inviteStatusLoading && inviteStatus && inviteStatus.is_valid
+                    ? inviteStatus.guild_name
+                      ? t("register.joiningGuild", {
+                          guildName: inviteStatus.guild_name,
+                        })
+                      : t("register.joiningGuildDefault")
+                    : null}
+                  {!inviteStatusLoading && inviteStatusError ? (
+                    <span className="text-destructive">
+                      {inviteStatusError}
+                    </span>
+                  ) : null}
+                </p>
+              ) : null}
+              {captchaRequired && captcha ? (
+                <CaptchaWidget
+                  key={captchaResetKey}
+                  config={captcha}
+                  onToken={setCaptchaToken}
+                />
+              ) : null}
+              <Button
+                className="w-full"
+                type="submit"
+                disabled={
+                  submitting ||
+                  (captchaRequired && !captchaToken) ||
+                  (inviteCode
+                    ? inviteStatusLoading ||
+                      (inviteStatus ? !inviteStatus.is_valid : false)
+                    : false)
+                }
+              >
+                {submitting ? t("register.submitting") : t("register.submit")}
+              </Button>
+              {error ? (
+                <p className="text-destructive text-sm">{error}</p>
+              ) : null}
+              {infoMessage ? (
+                <p className="text-primary text-sm">{infoMessage}</p>
+              ) : null}
+            </form>
+          </CardContent>
+          <CardFooter className="text-muted-foreground text-sm">
+            {t("register.haveAccount")}{" "}
+            <Link
+              className="ml-1 text-primary underline-offset-4 hover:underline"
+              to="/login"
+            >
+              {t("register.signIn")}
+            </Link>
+          </CardFooter>
+        </Card>
+      </div>
+    </div>
+  );
+};

@@ -1,0 +1,140 @@
+import { Loader2 } from "lucide-react";
+import type { FormEvent } from "react";
+import { useTranslation } from "react-i18next";
+
+import { AdvancedToolsSection } from "@/components/initiatives/AdvancedToolsToggles";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { ColorPickerPopover } from "@/components/ui/color-picker-popover";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { TabsContent } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+
+interface initiativeSettingsDetailsTabProps {
+  name: string;
+  setName: (value: string) => void;
+  description: string;
+  setDescription: (value: string) => void;
+  color: string;
+  setColor: (value: string) => void;
+  queuesEnabled: boolean;
+  onToggleQueues: (value: boolean) => void;
+  eventsEnabled: boolean;
+  onToggleEvents: (value: boolean) => void;
+  advancedToolEnabled: boolean;
+  onToggleAdvancedTool: (value: boolean) => void;
+  countersEnabled: boolean;
+  onToggleCounters: (value: boolean) => void;
+  canManageMembers: boolean;
+  isSaving: boolean;
+  onSaveDetails: (event: FormEvent<HTMLFormElement>) => void;
+}
+
+export const InitiativeSettingsDetailsTab = ({
+  name,
+  setName,
+  description,
+  setDescription,
+  color,
+  setColor,
+  queuesEnabled,
+  onToggleQueues,
+  eventsEnabled,
+  onToggleEvents,
+  advancedToolEnabled,
+  onToggleAdvancedTool,
+  countersEnabled,
+  onToggleCounters,
+  canManageMembers,
+  isSaving,
+  onSaveDetails,
+}: initiativeSettingsDetailsTabProps) => {
+  const { t } = useTranslation(["initiatives", "common"]);
+
+  return (
+    <TabsContent value="details">
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("settings.detailsTitle")}</CardTitle>
+          <CardDescription>{t("settings.detailsDescription")}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form className="space-y-4" onSubmit={onSaveDetails}>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="Initiative-name">{t("settings.nameLabel")}</Label>
+                <Input
+                  id="Initiative-name"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  disabled={!canManageMembers || isSaving}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="Initiative-color">{t("settings.colorLabel")}</Label>
+                <ColorPickerPopover
+                  id="Initiative-color"
+                  value={color}
+                  onChange={setColor}
+                  disabled={!canManageMembers || isSaving}
+                  triggerLabel="Adjust"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="Initiative-description">
+                {t("settings.descriptionLabel")}
+              </Label>
+              <Textarea
+                id="Initiative-description"
+                rows={4}
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                placeholder={t("settings.descriptionPlaceholder")}
+                disabled={!canManageMembers || isSaving}
+              />
+            </div>
+            {canManageMembers ? (
+              <Button type="submit" disabled={isSaving}>
+                {isSaving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {t("settings.saving")}
+                  </>
+                ) : (
+                  t("settings.saveChanges")
+                )}
+              </Button>
+            ) : (
+              <p className="text-muted-foreground text-sm">
+                {t("settings.editPermissionNote")}
+              </p>
+            )}
+          </form>
+        </CardContent>
+      </Card>
+      <AdvancedToolsSection
+        layout="card"
+        canManage={canManageMembers}
+        isSaving={isSaving}
+        eventsEnabled={eventsEnabled}
+        onToggleEvents={onToggleEvents}
+        queuesEnabled={queuesEnabled}
+        onToggleQueues={onToggleQueues}
+        countersEnabled={countersEnabled}
+        onToggleCounters={onToggleCounters}
+        advancedToolEnabled={advancedToolEnabled}
+        onToggleAdvancedTool={onToggleAdvancedTool}
+        idPrefix="settings"
+      />
+    </TabsContent>
+  );
+};
